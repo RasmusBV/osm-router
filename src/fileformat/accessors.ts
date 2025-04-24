@@ -121,20 +121,26 @@ export function readNodes(header: Format.Header, nodes: Format.SerializedSection
 
 export function readEdges(header: Format.Header, edges: Format.SerializedSection<"edges">){
     const indexMethod = header.flags.indexSizes ? "getBigUint64" : "getUint32"
+    const costMethod = header.flags.signedCost ? "getInt16" : "getUint16"
     const accessors = [{
-        name: "cost",
-        method: "getFloat32"
-    }, {
         name: "nodeListLength",
         method: "getUint16"
     }, {
-        name: "connectionsListLength",
+        name: "toEdgeListLength",
         method: "getUint16"
+    }, {
+        name: "fromEdgeListLength",
+        method: "getUint16"
+    }, {
+        padding: 2
     }, {
         name: "nodeListIndex",
         method: indexMethod
     }, {
-        name: "connectionsListIndex",
+        name: "toEdgeListIndex",
+        method: indexMethod
+    }, {
+        name: "fromEdgeListIndex",
         method: indexMethod
     }] as const satisfies Accessor[]
     return generateAccessor(edges.buffer, accessors, !header.flags.bigEndian, true)
@@ -146,7 +152,7 @@ export function readConnectionsList(header: Format.Header, connectionsList: Form
         method: header.flags.indexSizes ? "getBigUint64" : "getUint32"
     }, {
         name: "cost",
-        method: "getFloat32"
+        method: header.flags.signedCost ? "getInt16" : "getUint16"
     }] as const satisfies Accessor[]
     return generateAccessor(connectionsList.buffer, accessors, !header.flags.bigEndian, true)
 }

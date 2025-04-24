@@ -69,7 +69,7 @@ export const SECTION_ELEMENT_SIZE = {
         return padToByteBoundary(10 + (2 * coordinateBytes) + indexBytes)
     },
     edges: (indexBytes: number) => {
-        return padToByteBoundary(8 + (2 * indexBytes))
+        return padToByteBoundary(8 + (3 * indexBytes))
     },
     edgeList: (indexBytes: number) => indexBytes,
     nodeList: (indexBytes: number) => indexBytes,

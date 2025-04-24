@@ -20,19 +20,19 @@ importers:
       kdbush:
         specifier: ^4.0.2
         version: 4.0.2
-      node-readable-to-web-readable-stream:
-        specifier: ^0.4.2
-        version: 0.4.2
       osm-pbf-parser-node:
         specifier: https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz
         version: https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz
-      typed-emitter:
-        specifier: ^2.1.0
-        version: 2.1.0
     devDependencies:
       '@types/geokdbush':
         specifier: ^1.1.5
         version: 1.1.5
+      '@types/node':
+        specifier: 20.17.30
+        version: 20.17.30
+      node-readable-to-web-readable-stream:
+        specifier: ^0.4.2
+        version: 0.4.2
       typescript:
         specifier: 5.8.3
         version: 5.8.3
@@ -69,6 +69,9 @@ packages:
   '@types/kdbush@1.0.7':
     resolution: {integrity: sha512-QM5iB8m/0mnGOjUKshErIZQ0LseyTieRSYc3yaOpmrRM0xbWiOuJUWlduJx+TPNK7/VFMWphUGwx3nus7eT1Wg==}
 
+  '@types/node@20.17.30':
+    resolution: {integrity: sha512-7zf4YyHA+jvBNfVrk2Gtvs6x7E8V+YDW05bNfG2XkWDJfYRXrTiP/DsB2zSYTaHX0bGIujTBQdMVAhb+j7mwpg==}
+
   geokdbush@2.0.1:
     resolution: {integrity: sha512-0M8so1Qx6+jJ1xpirpCNrgUsWAzIcQ3LrLmh0KJPBYI3gH7vy70nY5zEEjSp9Tn0nBt6Q2Fh922oL08lfib4Zg==}
 
@@ -95,22 +98,19 @@ packages:
   resolve-protobuf-schema@2.1.0:
     resolution: {integrity: sha512-kI5ffTiZWmJaS/huM8wZfEMer1eRd7oJQhDuxeCLe3t7N7mX3z94CN0xPxBQxFYQTSNz9T0i+v6inKqSdK8xrQ==}
 
-  rxjs@7.8.2:
-    resolution: {integrity: sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==}
-
   tinyqueue@2.0.3:
     resolution: {integrity: sha512-ppJZNDuKGgxzkHihX8v9v9G5f+18gzaTfrukGrq6ueg0lmH4nqVnA2IPG0AEH3jKEk2GRJCUhDoqpoiw3PHLBA==}
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  typed-emitter@2.1.0:
-    resolution: {integrity: sha512-g/KzbYKbH5C2vPkaXGu8DJlHrGKHLsM25Zg9WuC9pMGfuvT+X25tZQWo5fK1BjBm8+UrVE9LDCvaY0CQk+fXDA==}
-
   typescript@5.8.3:
     resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
     engines: {node: '>=14.17'}
     hasBin: true
+
+  undici-types@6.19.8:
+    resolution: {integrity: sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw==}
 
 snapshots:
 
@@ -162,6 +162,10 @@ snapshots:
 
   '@types/kdbush@1.0.7': {}
 
+  '@types/node@20.17.30':
+    dependencies:
+      undici-types: 6.19.8
+
   geokdbush@2.0.1:
     dependencies:
       tinyqueue: 2.0.3
@@ -187,17 +191,10 @@ snapshots:
     dependencies:
       protocol-buffers-schema: 3.6.0
 
-  rxjs@7.8.2:
-    dependencies:
-      tslib: 2.8.1
-    optional: true
-
   tinyqueue@2.0.3: {}
 
   tslib@2.8.1: {}
 
-  typed-emitter@2.1.0:
-    optionalDependencies:
-      rxjs: 7.8.2
-
   typescript@5.8.3: {}
+
+  undici-types@6.19.8: {}

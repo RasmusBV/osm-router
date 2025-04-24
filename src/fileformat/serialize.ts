@@ -65,7 +65,8 @@ export async function serialize<T extends Partial<Options>>(graph: Graph, opts: 
         minorVersion: Format.MINOR_VERSION,
         flags: {
             bigEndian: options.endianness === "big",
-            indexSizes: layout.useBigIntIndex
+            indexSizes: layout.useBigIntIndex,
+            signedCost: layout.useSignedCost
         },
         id: globalThis.crypto.getRandomValues(new BigUint64Array(1))[0],
         timestamp: Date.now(),
@@ -155,7 +156,8 @@ function serializeNodeMap(graph: Graph, layout: Layout, options: Options): Forma
 
 function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.SerializedSection[] {
     const littleEndian = options.endianness === "little"
-    
+    const maxCost = layout.useSignedCost ? 0x7FFF : 0xFFFF
+    const minCost = layout.useSignedCost ? -0x8000 : 0x0000
     const useBigIntIndex = layout.useBigIntIndex
     const indexBytes = useBigIntIndex ? 8 : 4
 
@@ -171,46 +173,65 @@ function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.
     const connectionsListBuffer = createArrayBuffer(layout.lengths.connectionsList * connectionsListSize)
     let connectionsListIndex = 0
 
-    
+    const writeCost = (buffer: DataView<ArrayBuffer>, offset: number, cost: number) => {
+        const truncatedCost = Math.max(minCost, Math.min(maxCost, cost))
+        if(layout.useSignedCost) {
+            buffer.setInt16(offset, truncatedCost, littleEndian)
+        } else {
+            buffer.setUint16(offset, truncatedCost, littleEndian)
+        }
+    }
+    const writeIndex = (buffer: DataView<ArrayBuffer>, offset: number, index: number) => {
+        if(useBigIntIndex) {
+            buffer.setBigUint64(offset, BigInt(index), littleEndian)
+            return 8
+        } else {
+            buffer.setUint32(offset, index, littleEndian)
+            return 4
+        }
+    }
+
+    const writeConnection = (from: OSM.NodeId, to: OSM.NodeId, cost: number) => {
+        const edgeIndex = layout.edges.get(from)?.get(to)
+        if(edgeIndex === undefined) { throw new Error("") }
+        let connectionsListOffset = connectionsListIndex * connectionsListSize
+        connectionsListOffset += writeIndex(connectionsListBuffer, connectionsListOffset, edgeIndex)
+        writeCost(connectionsListBuffer, connectionsListOffset, cost)
+        connectionsListIndex++
+    }
+
     for(const [from, vias] of layout.edges) {
         for(const via of vias.keys()) {
             const edge = graph.edges.get(from)?.get(via)
             if(!edge) { throw new Error("") }
-            const offset = edgeIndex * edgesSize
-            edgesBuffer.setFloat32(offset, edge.cost, littleEndian)
-            edgesBuffer.setUint16(offset + 4, edge.nodes.length, littleEndian)
-            edgesBuffer.setUint16(offset + 6, edge.edges.size, littleEndian)
-            if(useBigIntIndex) {
-                edgesBuffer.setBigUint64(offset + 8, BigInt(nodeListIndex), littleEndian)
-                edgesBuffer.setBigUint64(offset + 16, BigInt(connectionsListIndex), littleEndian)
-            } else {
-                edgesBuffer.setUint32(offset + 8, nodeListIndex, littleEndian)
-                edgesBuffer.setUint32(offset + 12, connectionsListIndex, littleEndian)
-            }
-            edgeIndex++
+            let offset = edgeIndex * edgesSize
+            
+            writeCost(edgesBuffer, offset, edge.cost)
+            edgesBuffer.setUint16(offset + 2, edge.nodes.length, littleEndian)
+            edgesBuffer.setUint16(offset + 4, edge.to.size, littleEndian)
+            edgesBuffer.setUint16(offset + 6, edge.from.size, littleEndian)
+            offset += 8
+
+            offset += writeIndex(edgesBuffer, offset, nodeListIndex)
+            offset += writeIndex(edgesBuffer, offset, connectionsListIndex)
+
             for(const node of edge.nodes) {
                 const nodeIndex = layout.nodes.get(node)
                 if(nodeIndex === undefined) { throw new Error("") }
                 const nodeListOffset = nodeListIndex * nodeListSize
-                if(useBigIntIndex) {
-                    nodeListBuffer.setBigUint64(nodeListOffset, BigInt(nodeIndex), littleEndian)
-                } else {
-                    nodeListBuffer.setUint32(nodeListOffset, nodeIndex, littleEndian)
-                }
+                writeIndex(nodeListBuffer, nodeListOffset, nodeIndex)
                 nodeListIndex++
             }
-            for(const [to, cost] of edge.edges) {
-                const edgeIndex = layout.edges.get(via)?.get(to)
-                if(edgeIndex === undefined) { throw new Error("") }
-                const connectionsListOffset = connectionsListIndex * connectionsListSize
-                if(useBigIntIndex) {
-                    connectionsListBuffer.setBigUint64(connectionsListOffset, BigInt(edgeIndex), littleEndian)
-                } else {
-                    connectionsListBuffer.setUint32(connectionsListOffset, edgeIndex, littleEndian)
-                }
-                connectionsListBuffer.setFloat32(connectionsListOffset + indexBytes, cost, littleEndian)
-                connectionsListIndex++
-            }            
+
+            for(const [to, cost] of edge.to) {
+                writeConnection(via, to, cost)
+            }
+            writeIndex(edgesBuffer, offset, connectionsListIndex)
+            for(const [from, cost] of edge.from) {
+                writeConnection(from, via, cost)
+            }
+
+            edgeIndex++
         }
     }
     return [
@@ -236,6 +257,8 @@ export type Layout = {
     nodes: Map<OSM.NodeId, number>,
     edges: Map<OSM.NodeId, Map<OSM.NodeId, number>>,
     useBigIntIndex: boolean
+    costAreTruncated: boolean
+    useSignedCost: boolean
     lengths: {
         nodes: number,
         edges: number,
@@ -259,6 +282,8 @@ function createLayout(graph: Graph): Layout {
         if(nodeMap.has(id)) { continue }
         nodeMap.set(id, nodeIndex++)
     }
+    let maxCost = 0
+    let minCost = 0
     let edgeIndex = 0
     let nodeListSize = 0
     let connectionsListSize = 0
@@ -270,8 +295,10 @@ function createLayout(graph: Graph): Layout {
             edgeMap.set(from, edges)
         }
         for(const [id, edge] of vias) {
+            maxCost = Math.max(edge.cost, maxCost, ...edge.to.values())
+            minCost = Math.min(edge.cost, minCost, ...edge.to.values())
             nodeListSize += edge.nodes.length
-            connectionsListSize += edge.edges.size
+            connectionsListSize += (edge.to.size + edge.from.size)
             edges.set(id, edgeIndex++)
         }
     }
@@ -283,11 +310,14 @@ function createLayout(graph: Graph): Layout {
         connectionsList: connectionsListSize
     }
     const useBigIntIndex = Object.values(lengths).some((value) => value > 0xFFFFFFFF)
-
+    const useSignedCost = minCost < 0
+    const costAreTruncated = maxCost > (useSignedCost ? 0x7FFF : 0xFFFF)
     return {
         nodes: nodeMap,
         edges: edgeMap,
         useBigIntIndex,
+        costAreTruncated,
+        useSignedCost,
         lengths
     }
 }

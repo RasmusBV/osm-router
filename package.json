@@ -7,6 +7,8 @@
   "private": true,
   "devDependencies": {
     "@types/geokdbush": "^1.1.5",
+    "@types/node": "20.17.30",
+    "node-readable-to-web-readable-stream": "^0.4.2",
     "typescript": "5.8.3"
   },
   "packageManager": "pnpm@9.13.2",
@@ -15,8 +17,6 @@
     "@turf/angle": "^7.1.0",
     "geokdbush": "^2.0.1",
     "kdbush": "^4.0.2",
-    "node-readable-to-web-readable-stream": "^0.4.2",
-    "osm-pbf-parser-node": "https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz",
-    "typed-emitter": "^2.1.0"
+    "osm-pbf-parser-node": "https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz"
   }
 }

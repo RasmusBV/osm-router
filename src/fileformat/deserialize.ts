@@ -2,6 +2,7 @@ import * as Format from "./format.js"
 import * as Header from "./header.js"
 import * as SectionTable from "./sectionTable.js"
 import * as Accessors from "./accessors.js"
+import type { ReadableStreamReadResult } from "stream/web"
 
 type RetypedReadableStreamBYOBReader = Omit<ReadableStreamBYOBReader, "read"> & {
     read: <T extends ArrayBufferView>(
@@ -79,15 +80,26 @@ export class GraphAccessor extends Accessors.DataAccessor<RequiredSectionNames> 
             if(callback(this.accessors.nodeList.nodeIndex(nodeListIndex + i), i, nodeListLength) === false) { return }
         }
     }
-    listEdgeConnections(edgeIndex: number, callback: (edgeIndex: number, cost: number, listIndex: number, listLength: number) => any) {
-        const connectionsListIndex = this.accessors.edges.connectionsListIndex(edgeIndex)
-        const connectionsListLength = this.accessors.edges.connectionsListLength(edgeIndex)
-        for(let i = 0; i < connectionsListLength; i++) {
+
+    listFromEdges(edgeIndex: number, callback: (edgeIndex: number, cost: number, listIndex: number, listLength: number) => any) {
+        const length = this.accessors.edges.fromEdgeListLength(edgeIndex)
+        const index = this.accessors.edges.fromEdgeListIndex(edgeIndex)
+        return this.listEdgeConnections(index, length, callback)
+    }
+
+    listToEdges(edgeIndex: number, callback: (edgeIndex: number, cost: number, listIndex: number, listLength: number) => any) {
+        const length = this.accessors.edges.toEdgeListLength(edgeIndex)
+        const index = this.accessors.edges.toEdgeListIndex(edgeIndex)
+        return this.listEdgeConnections(index, length, callback)
+    }
+    
+    listEdgeConnections(index: number, length: number, callback: (edgeIndex: number, cost: number, listIndex: number, listLength: number) => any) {
+        for(let i = 0; i < length; i++) {
             if(callback(
-                this.accessors.connectionsList.edgeIndex(connectionsListIndex+i),
-                this.accessors.connectionsList.cost(connectionsListIndex+i),
+                this.accessors.connectionsList.edgeIndex(index+i),
+                this.accessors.connectionsList.cost(index+i),
                 i,
-                connectionsListLength
+                length
             ) === false) { return }
         }
     }

@@ -36,7 +36,7 @@ safely be ignored by older parsers.
 ## Flags
 
 ```
-|  Endianness  |  Index Sizes  | ... 6 reserved bits (zero-fill) ...  |
+|  Endianness  |  Index Sizes | ... 4 reserved bits (zero-fill) ...  |
 ```
 
 ### Endianness
@@ -151,14 +151,20 @@ Determines the format for the *Lon* and *Lat* fields
 
 
 ## Edges (Array)
+Each entry is always padded to the nearest 8-byte boundary
+The *In edge list* and *Out edge list* both refer to the Connections List, just with one set being edges that **connect to this edge**, and the other being edges that **this edge connects to**.
+
 ```
-Size    | Name                    | Notes
+Size    | Name                 | Notes
 -------------------------------------------------------
-4B      | Cost                    | Float32
-2B      | Node list length        |
-2B      | Connections list length |
-4B / 8B | Node list index         | Per global flag "Index Size"
-4B / 8B | Connections list index  |
+2B      | Node list length     |
+2B      | Out edge list length |
+2B      | In edge list length  |
+2B      | Padding              | Zero-fill
+4B / 8B | Node list index      | Per global flag "Index Size"
+4B / 8B | Out edge list index  |
+4B / 8B | In edge list index   |
+0B / 4B | Padding              | Zero-fill
 ```
 
 
@@ -197,3 +203,11 @@ Nodes are inserted into the index in the same order as they are in the nodes sec
 **True:** All nodes are indexed
 
 **False:** Only terminal nodes are indexed
+
+# Change Log
+
+## Version 2.1
+Modified data section "Edges" to allow for Bidirectional Djikstras. Added list of incomming edges and outgoing edges.
+
+In conjunction with this, modified the cost of both edges and connections to be 16bit integers, and added a global flag which
+allows for them to be signed if negative weights are required, at the cost of the max weight being 32,767 instead of 65,536.

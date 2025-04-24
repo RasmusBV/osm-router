@@ -40,11 +40,9 @@ export type EdgeExpandedGraph = Map<OSM.NodeId, Map<OSM.NodeId, {
     /**All nodes between fromNode and viaNode. */
     nodes: OSM.NodeId[],
 
-    /**Cost of travel between fromNode and viaNode. */
-    cost: number,
-
-    /**All valid toNodes with associated costs for the maneuveres. */
-    edges: Map<OSM.NodeId, number> 
+    /**All valid connections with associated costs. */
+    to: Map<OSM.NodeId, number> 
+    from: Map<OSM.NodeId, number>
 
 }>>
 
@@ -62,13 +60,15 @@ export function buildGraph(data: OSMData, processTurn: ProcessTurn = () => 0) {
         edges: new Map(),
         nodes: new Map()
     }
+    
     const turn = {} as Turn
-    for(const [viaNode, junction] of junctions) {
-        for(const [fromNode, fromEdge] of junction.from) {
-            for(const [toNode, toEdge] of junction.to) {
-                if(!isAllowed(fromEdge.way, viaNode, toEdge.way, restrictionMap)) {
+    for(const [viaNode, toJunction] of junctions) {
+        for(const [fromNode, fromEdge] of toJunction.from) {
+            for(const [toNode, toEdge] of toJunction.to) {
+                if(isAllowed(fromEdge.way, viaNode, toEdge.way, restrictionMap)) {
                     continue
                 }
+
                 const fromClosest = getClosestNode(fromEdge.way, fromNode.id, viaNode.id, data)
                 const toClosest = getClosestNode(toEdge.way, toNode.id, viaNode.id, data)
                 if(!fromClosest || !toClosest) { continue }
@@ -89,12 +89,13 @@ export function buildGraph(data: OSMData, processTurn: ProcessTurn = () => 0) {
 
                 turn.restrictions = restrictionMap.get(fromEdge.way)?.get(viaNode)?.get(toEdge.way)
 
-                const cost = processTurn(turn, junction, data)
+                const cost = processTurn(turn, toJunction, data)
                 if(cost === undefined) { continue }
-                getExpandedEdge(viaNode, toNode, junctions, graph, data)
-                const edge = getExpandedEdge(fromNode, viaNode, junctions, graph, data)
-                if(!edge) { continue }
-                edge.edges.set(toNode.id, cost)
+
+                // Unsure about the cost calculation
+                const totalCost = cost + toEdge.cost / 2 + fromEdge.cost / 2
+                getExpandedEdge(viaNode, toNode, junctions, graph, data)?.from.set(fromNode.id, cost + toEdge.cost)
+                getExpandedEdge(fromNode, viaNode, junctions, graph, data)?.to.set(toNode.id, cost + fromEdge.cost)
             }
         }
     }
@@ -139,9 +140,9 @@ function getExpandedEdge(
             nodeInfo.edges.add(edgeInfo)
         }
         edge = {
-            cost: edgeInfo.cost,
             nodes: edgeInfo.nodes,
-            edges: new Map()
+            to: new Map(),
+            from: new Map()
         }
         edges.set(to.id, edge)
     }

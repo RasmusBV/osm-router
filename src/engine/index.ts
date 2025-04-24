@@ -62,7 +62,6 @@ export class Engine {
             const currentBestCost = edgeBestCost.get(next[0])
             if(currentBestCost && currentBestCost < nextCost) { continue }
             edgeBestCost.set(next[0], nextCost)
-
             this.data.listEdgeConnections(next[0], (connectedEdgeIndex, turnCost) => {
                 const dynamicCost = dynamicCostFunction(next, connectedEdgeIndex, turnCost)
                 const fixedCost = this.weightFunction(next, connectedEdgeIndex, turnCost)
@@ -107,5 +106,4 @@ export class Engine {
         }
         return coordinates
     }
-
 }
