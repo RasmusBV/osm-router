@@ -1,25 +1,27 @@
-import * as OSM from "../types.js"
-import { OSMData } from "./data.js"
-import { WarningType } from "../warnings.js";
+import type * as OSM from "../types.js"
+import type { OSMData } from "./data.js"
+import * as geokdbush from 'geokdbush';
+import { Info } from "../logging.js";
 
 export type Junction = { to: Map<OSM.Node, OSM.Edge>, from: Map<OSM.Node, OSM.Edge> }
+export type JunctionMap = Map<OSM.Node, Junction>
 
 export function buildJunctionMap(data: OSMData) {
-    const junctions = new Map<OSM.Node, Junction>()
+    const junctions: JunctionMap = new Map()
 
     let size = 0
     const segment: OSM.Node[] = []
     for(const way of data.ways.values()) {
         if(way.refs.length <= 1) {
-            data.warn(WarningType.MalformedWay, { way })
+            data.emit("warning", new Info.ErrorLike("Malformed Way", { way }))
             continue
         }
         const firstNode = data.nodes.get(way.refs[0])
         if(!firstNode) {
-            data.warn(
-                WarningType.MissingNode,
+            data.emit("warning", new Info.ErrorLike(
+                "Missing Node",
                 { nodeId: way.refs[0], way }
-            )
+            ))
             continue
         }
         segment[0] = firstNode
@@ -28,14 +30,14 @@ export function buildJunctionMap(data: OSMData) {
         for(let i = 1; i < way.refs.length; i++) {
             const current = data.nodes.get(way.refs[i])
             if(!current) { 
-                data.warn(
-                    WarningType.MissingNode,
+                data.emit("warning", new Info.ErrorLike(
+                    "Missing Node",
                     { nodeId: way.refs[i], way }
-                )
+                ))
                 continue 
             }
             const last = segment[size-1]
-            const length = distance(last.lat, last.lon, current.lat, current.lon)
+            const length = geokdbush.distance(last.lon, last.lat, current.lon, current.lat) * 1000
             segment[size++] = current
 
             cost.forward += (length / way.speed.forward) * way.multiplier.forward
@@ -82,22 +84,4 @@ function getJunctions(map: Map<OSM.Node, Junction>, nodeId: OSM.Node) {
         map.set(nodeId, junction)
     }
     return junction
-}
-
-const EARTH_RADIUS_M = 6_378_137
-const TO_RADIANS_CONVERSION = (Math.PI / 180)
-
-function distance(lat1: number, lon1: number, lat2: number, lon2: number) {
-    const dLat = (lat2 - lat1)*TO_RADIANS_CONVERSION
-    const dLon = (lon2 - lon1)*TO_RADIANS_CONVERSION
-
-    const lat1_r = (lat1)*TO_RADIANS_CONVERSION
-    const lat2_r = (lat2)*TO_RADIANS_CONVERSION
-
-    const dLat2 = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-    const dLon2 = Math.sin(dLon / 2) * Math.sin(dLon / 2)
-
-    const a = dLat2 + (dLon2 * Math.cos(lat1_r) * Math.cos(lat2_r))
-
-    return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }

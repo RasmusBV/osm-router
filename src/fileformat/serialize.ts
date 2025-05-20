@@ -1,18 +1,16 @@
+import * as Format from "./format.js";
 import KDBush from "kdbush"
-import * as Format from "./format.js"
-import { Graph } from "../preprocess/index.js"
-import * as OSM from "../types.js"
-import * as Header from "./header.js"
-import * as SectionTable from "./sectionTable.js"
+import type { Graph } from "../preprocess/index.js"
+import type * as OSM from "../types.js"
 
-type Options = {
+export type SerializeOptions = {
     endianness: "big" | "little"
     coordinatePrecision: "single" | "double"
     indexAllNodes: boolean
     metadata: Format.Metadata
 }
 
-const defaultOptions: Options = {
+const defaultOptions: SerializeOptions = {
     endianness: "little",
     coordinatePrecision: "single",
     indexAllNodes: false,
@@ -23,15 +21,31 @@ const defaultMetadata = {
     writingprogram: "osm-router-0.0.0"
 } satisfies Format.Metadata
 
-export type SerializeResult = {
-    layout: Layout
-    header: Format.Header,
-    sectionTable: Format.SectionTableEntry[]
-    index: KDBush,
-    out: DataView<ArrayBuffer>[]
+export type Layout = {
+    nodes: Map<OSM.NodeId, number>,
+    edges: Map<OSM.NodeId, Map<OSM.NodeId, number>>,
+    useBigIntIndex: boolean
+    lengths: {
+        nodes: number,
+        edges: number,
+        nodeList: number,
+        edgeList: number,
+        connectionsList: number
+    }
 }
 
-export async function serialize<T extends Partial<Options>>(graph: Graph, opts: T = {} as T): Promise<SerializeResult> {
+export type Serialized = {
+    id: bigint
+    layout: Layout;
+    index: KDBush;
+    flags: {
+        bigEndian: boolean;
+        indexSizes: boolean;
+    }
+    out: DataView<ArrayBuffer>[];
+}
+
+export async function serialize<T extends Partial<SerializeOptions>>(graph: Graph, opts: T = {} as T): Promise<Serialized> {
     const options = {...defaultOptions, ...opts}
     const metadata = { ...defaultMetadata, ...options.metadata }
     
@@ -41,7 +55,7 @@ export async function serialize<T extends Partial<Options>>(graph: Graph, opts: 
     const nodeMap = serializeNodeMap(graph, layout, options)
     const edges = serializeEdges(graph, layout, options)
     const serializedMetadata = new TextEncoder().encode(JSON.stringify(metadata)) as Uint8Array<ArrayBuffer>
-    const serializedSections: Format.SerializedSection[] = [
+    const serializedSections = [
         {
             name: "metadata",
             buffer: new DataView(serializedMetadata.buffer.slice(
@@ -49,44 +63,29 @@ export async function serialize<T extends Partial<Options>>(graph: Graph, opts: 
                 serializedMetadata.byteOffset + serializedMetadata.byteLength
             )),
             flags: {}
-        },
+        } as const,
         ...nodeMap, 
         ...edges,
         {
             name: "index",
             buffer: new DataView(index.data),
-            flags: Format.encodeBitFlags("index", {indexType: options.indexAllNodes})
-        }
+            flags: { indexType: options.indexAllNodes }
+        } as const
     ]
-    const sectionTableEntries = await Promise.all(serializedSections.map((section) => SectionTable.generateTableEntry(section)))
-    const sectionTableSize = sectionTableEntries.length * Format.SECTION_TABLE_ENTRY_SIZE
-    const header: Omit<Format.Header, "digest"> = {
-        majorVersion: Format.MAJOR_VERSION,
-        minorVersion: Format.MINOR_VERSION,
-        flags: {
-            bigEndian: options.endianness === "big",
-            indexSizes: layout.useBigIntIndex,
-            signedCost: layout.useSignedCost
-        },
-        id: globalThis.crypto.getRandomValues(new BigUint64Array(1))[0],
-        timestamp: Date.now(),
-        sectionTableSize
+    const id = globalThis.crypto.getRandomValues(new BigUint64Array(1))[0]
+    const flags = {
+        bigEndian: options.endianness === "big",
+        indexSizes: layout.useBigIntIndex
     }
-    const headerAndSectionTableBuffer = new ArrayBuffer(sectionTableSize + Format.HEADER_SIZE)
-    Header.serialize(header, new DataView(headerAndSectionTableBuffer, 0, Format.HEADER_SIZE))
-    SectionTable.serialize(sectionTableEntries, new DataView(headerAndSectionTableBuffer, Format.HEADER_SIZE, sectionTableSize), header)
-    const digest = await Header.writeDigest(new DataView(headerAndSectionTableBuffer))
-
-    const out = [new DataView(headerAndSectionTableBuffer), ...serializedSections.map((section) => section.buffer)]
-
-    return { layout, header: {...header, digest}, sectionTable: sectionTableEntries, index, out }
+    const out = await Format.helper.serialize(id, flags, serializedSections)
+    return { id, layout, flags, index, out }
 }
 
 function createArrayBuffer(size: number) {
     return new DataView(new ArrayBuffer(Format.padToByteBoundary(size)))
 }
 
-function serializeNodeMap(graph: Graph, layout: Layout, options: Options): Format.SerializedSection[] {
+function serializeNodeMap(graph: Graph, layout: Layout, options: SerializeOptions) {
 
     const littleEndian = options.endianness === "little"
     
@@ -144,20 +143,20 @@ function serializeNodeMap(graph: Graph, layout: Layout, options: Options): Forma
         {
             name: "nodes",
             buffer: nodesBuffer,
-            flags: Format.encodeBitFlags("nodes", {coordinatePrecision: coordinateBytes === 8})
+            flags: {
+                coordinatePrecision: coordinateBytes === 8
+            }
         },
         {
             name: "edgeList",
             buffer: edgeListBuffer,
             flags: {}
         }
-    ]
+    ] as const
 }
 
-function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.SerializedSection[] {
+function serializeEdges(graph: Graph, layout: Layout, options: SerializeOptions) {
     const littleEndian = options.endianness === "little"
-    const maxCost = layout.useSignedCost ? 0x7FFF : 0xFFFF
-    const minCost = layout.useSignedCost ? -0x8000 : 0x0000
     const useBigIntIndex = layout.useBigIntIndex
     const indexBytes = useBigIntIndex ? 8 : 4
 
@@ -173,14 +172,6 @@ function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.
     const connectionsListBuffer = createArrayBuffer(layout.lengths.connectionsList * connectionsListSize)
     let connectionsListIndex = 0
 
-    const writeCost = (buffer: DataView<ArrayBuffer>, offset: number, cost: number) => {
-        const truncatedCost = Math.max(minCost, Math.min(maxCost, cost))
-        if(layout.useSignedCost) {
-            buffer.setInt16(offset, truncatedCost, littleEndian)
-        } else {
-            buffer.setUint16(offset, truncatedCost, littleEndian)
-        }
-    }
     const writeIndex = (buffer: DataView<ArrayBuffer>, offset: number, index: number) => {
         if(useBigIntIndex) {
             buffer.setBigUint64(offset, BigInt(index), littleEndian)
@@ -193,27 +184,38 @@ function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.
 
     const writeConnection = (from: OSM.NodeId, to: OSM.NodeId, cost: number) => {
         const edgeIndex = layout.edges.get(from)?.get(to)
-        if(edgeIndex === undefined) { throw new Error("") }
+        if(edgeIndex === undefined) { 
+            console.error(layout.edges.get(from))
+            console.error(from, to, cost)
+            throw new Error("") 
+        }
         let connectionsListOffset = connectionsListIndex * connectionsListSize
         connectionsListOffset += writeIndex(connectionsListBuffer, connectionsListOffset, edgeIndex)
-        writeCost(connectionsListBuffer, connectionsListOffset, cost)
+        connectionsListBuffer.setFloat32(connectionsListOffset, cost, littleEndian)
         connectionsListIndex++
     }
-
-    for(const [from, vias] of layout.edges) {
-        for(const via of vias.keys()) {
-            const edge = graph.edges.get(from)?.get(via)
+    for(const [source, destinations] of layout.edges) {
+        for(const destination of destinations.keys()) {
+            const edge = graph.edges.get(source)?.get(destination)
             if(!edge) { throw new Error("") }
             let offset = edgeIndex * edgesSize
             
-            writeCost(edgesBuffer, offset, edge.cost)
-            edgesBuffer.setUint16(offset + 2, edge.nodes.length, littleEndian)
-            edgesBuffer.setUint16(offset + 4, edge.to.size, littleEndian)
-            edgesBuffer.setUint16(offset + 6, edge.from.size, littleEndian)
+            edgesBuffer.setUint16(offset, edge.nodes.length, littleEndian)
+            edgesBuffer.setUint16(offset + 2, edge.to.size, littleEndian)
+            edgesBuffer.setUint16(offset + 4, edge.from.size, littleEndian)
             offset += 8
 
             offset += writeIndex(edgesBuffer, offset, nodeListIndex)
             offset += writeIndex(edgesBuffer, offset, connectionsListIndex)
+
+            for(const [to, cost] of edge.to) {
+                writeConnection(destination, to, cost)
+            }
+            writeIndex(edgesBuffer, offset, connectionsListIndex)
+
+            for(const [from, cost] of edge.from) {
+                writeConnection(from, source, cost)
+            }
 
             for(const node of edge.nodes) {
                 const nodeIndex = layout.nodes.get(node)
@@ -221,14 +223,6 @@ function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.
                 const nodeListOffset = nodeListIndex * nodeListSize
                 writeIndex(nodeListBuffer, nodeListOffset, nodeIndex)
                 nodeListIndex++
-            }
-
-            for(const [to, cost] of edge.to) {
-                writeConnection(via, to, cost)
-            }
-            writeIndex(edgesBuffer, offset, connectionsListIndex)
-            for(const [from, cost] of edge.from) {
-                writeConnection(from, via, cost)
             }
 
             edgeIndex++
@@ -250,79 +244,10 @@ function serializeEdges(graph: Graph, layout: Layout, options: Options): Format.
             buffer: connectionsListBuffer,
             flags: {}
         }
-    ]
+    ] as const
 }
 
-export type Layout = {
-    nodes: Map<OSM.NodeId, number>,
-    edges: Map<OSM.NodeId, Map<OSM.NodeId, number>>,
-    useBigIntIndex: boolean
-    costAreTruncated: boolean
-    useSignedCost: boolean
-    lengths: {
-        nodes: number,
-        edges: number,
-        nodeList: number,
-        edgeList: number,
-        connectionsList: number
-    }
-}
-
-
-function createLayout(graph: Graph): Layout {
-    const nodeMap = new Map<OSM.NodeId, number>()
-    let nodeIndex = 0
-    let edgeListSize = 0
-
-    for(const node of graph.edges.keys()) {
-        nodeMap.set(node, nodeIndex++)
-    }
-    for(const [id, node] of graph.nodes) {
-        edgeListSize += node.edges.size
-        if(nodeMap.has(id)) { continue }
-        nodeMap.set(id, nodeIndex++)
-    }
-    let maxCost = 0
-    let minCost = 0
-    let edgeIndex = 0
-    let nodeListSize = 0
-    let connectionsListSize = 0
-    const edgeMap = new Map<OSM.NodeId, Map<OSM.NodeId, number>>()
-    for(const [from, vias] of graph.edges) {
-        let edges = edgeMap.get(from)
-        if(!edges) {
-            edges = new Map()
-            edgeMap.set(from, edges)
-        }
-        for(const [id, edge] of vias) {
-            maxCost = Math.max(edge.cost, maxCost, ...edge.to.values())
-            minCost = Math.min(edge.cost, minCost, ...edge.to.values())
-            nodeListSize += edge.nodes.length
-            connectionsListSize += (edge.to.size + edge.from.size)
-            edges.set(id, edgeIndex++)
-        }
-    }
-    const lengths = {
-        nodes: nodeIndex, 
-        edges: edgeIndex, 
-        nodeList: nodeListSize, 
-        edgeList: edgeListSize, 
-        connectionsList: connectionsListSize
-    }
-    const useBigIntIndex = Object.values(lengths).some((value) => value > 0xFFFFFFFF)
-    const useSignedCost = minCost < 0
-    const costAreTruncated = maxCost > (useSignedCost ? 0x7FFF : 0xFFFF)
-    return {
-        nodes: nodeMap,
-        edges: edgeMap,
-        useBigIntIndex,
-        costAreTruncated,
-        useSignedCost,
-        lengths
-    }
-}
-
-function serializeIndex(graph: Graph, options: Options) {
+function serializeIndex(graph: Graph, options: SerializeOptions) {
     const indexSize = options.indexAllNodes ? graph.nodes.size : graph.edges.size
     const arrayType = options.coordinatePrecision === "single" ? Float32Array : Float64Array
     const index = new KDBush(indexSize, 64, arrayType)
@@ -340,4 +265,49 @@ function serializeIndex(graph: Graph, options: Options) {
 
     index.finish()
     return index
+}
+
+function createLayout(graph: Graph): Layout {
+    const nodeMap = new Map<OSM.NodeId, number>()
+    let nodeIndex = 0
+    let edgeListSize = 0
+
+    for(const node of graph.edges.keys()) {
+        nodeMap.set(node, nodeIndex++)
+    }
+    for(const [id, node] of graph.nodes) {
+        edgeListSize += node.edges.size
+        if(nodeMap.has(id)) { continue }
+        nodeMap.set(id, nodeIndex++)
+    }
+    let edgeIndex = 0
+    let nodeListSize = 0
+    let connectionsListSize = 0
+    const edgeMap = new Map<OSM.NodeId, Map<OSM.NodeId, number>>()
+    for(const [from, vias] of graph.edges) {
+        let edges = edgeMap.get(from)
+        if(!edges) {
+            edges = new Map()
+            edgeMap.set(from, edges)
+        }
+        for(const [id, edge] of vias) {
+            nodeListSize += edge.nodes.length
+            connectionsListSize += (edge.to.size + edge.from.size)
+            edges.set(id, edgeIndex++)
+        }
+    }
+    const lengths = {
+        nodes: nodeIndex, 
+        edges: edgeIndex, 
+        nodeList: nodeListSize, 
+        edgeList: edgeListSize, 
+        connectionsList: connectionsListSize
+    }
+    const useBigIntIndex = Object.values(lengths).some((value) => value > 0xFFFFFFFF)
+    return {
+        nodes: nodeMap,
+        edges: edgeMap,
+        useBigIntIndex,
+        lengths
+    }
 }

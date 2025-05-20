@@ -4,10 +4,7 @@ dist
 public
 .env*
 .VsCodeCounter
-/old
 local
 *.tsbuildinfo
 .vscode
 .yarn
-gen
-.venv

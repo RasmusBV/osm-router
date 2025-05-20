@@ -1,22 +1,46 @@
 {
-  "name": "osm-router",
-  "version": "0.0.0",
-  "main": "dist/index.js",
-  "license": "MIT",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/geokdbush": "^1.1.5",
-    "@types/node": "20.17.30",
-    "node-readable-to-web-readable-stream": "^0.4.2",
-    "typescript": "5.8.3"
-  },
-  "packageManager": "pnpm@9.13.2",
-  "dependencies": {
-    "@datastructures-js/priority-queue": "6.3.2",
-    "@turf/angle": "^7.1.0",
-    "geokdbush": "^2.0.1",
-    "kdbush": "^4.0.2",
-    "osm-pbf-parser-node": "https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz"
-  }
+    "name": "osm-router",
+    "version": "1.0.0",
+    "description": "OpenStreetMap routing engine",
+    "license": "MIT",
+    "homepage": "https://github.com/RasmusBV/osm-router",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/RasmusBV/osm-router.git"
+    },
+    "author": "RasmusBV",
+    "type": "module",
+    "exports": {
+        "types": "./public/index.d.ts",
+        "default": "./public/index.js"
+    },
+    "main": "public/index.js",
+    "types": "public/index.d.ts",
+    "engines": {
+        "node": ">=16.20.2"
+    },
+    "scripts": {
+        "build": "del-cli public && npx tsc -p tsconfig.public.json",
+        "preprocess": "node -max-old-space-size=8192 ./dist/demo/preprocess.js ./graph.bin",
+        "demo": "node ./dist/demo/app.js ./graph.bin 8080"
+    },
+    "files": [
+        "public"
+    ],
+    "devDependencies": {
+        "@types/geokdbush": "^1.1.5",
+        "@types/node": "20.17.30",
+        "@types/webcrypto": "^0.0.30",
+        "del-cli": "^6.0.0",
+        "typed-emitter": "^2.1.0",
+        "typescript": "5.8.3",
+        "zod": "^3.24.4"
+    },
+    "dependencies": {
+        "@datastructures-js/priority-queue": "6.3.2",
+        "@turf/angle": "^7.1.0",
+        "geokdbush": "^2.0.1",
+        "kdbush": "^4.0.2",
+        "osm-pbf-parser-node": "https://github.com/borisgontar/osm-pbf-parser-node/archive/refs/tags/v1.1.4.tar.gz"
+    }
 }

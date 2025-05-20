@@ -1,3 +1,9 @@
+
+/**
+ * **Obstacles** is a concept borrowed from OSRM, read more at
+ * 
+ * https://github.com/Project-OSRM/osrm-backend/blob/master/docs/profiles.md#obstacle
+ */
 export type Obstacle = {
     type: Obstacle.Type,
     direction: Obstacle.Direction,
@@ -5,7 +11,6 @@ export type Obstacle = {
 }
 
 export namespace Obstacle {
-    
     const _Types = [
         "none",
         "barrier",
@@ -43,23 +48,19 @@ export namespace Obstacle {
 
     export const directions = Object.fromEntries(_Directions.map((type) => [type, type])) as Directions
 
-    const defaultObstacle: Obstacle = {
+    let defaultObstacle: Obstacle = {
         type: types.none,
         direction: directions.none,
         duration: 0
     }
-    
+
+    export function getDefault() {
+        return {...defaultObstacle}
+    }
     /**
-     * OBS: Mutates input object!
-     * @param partial Partial Obstacle
-     * @returns Fully qualified Obstacle
+     * Set the global default Obstacle
      */
-    export function fill(partial: Partial<Obstacle>) {
-        for(const key in defaultObstacle) {
-            if(!(partial as any)[key]) {
-                (partial as any)[key] = defaultObstacle[key as keyof Obstacle]
-            }
-        }
-        return partial as Obstacle
+    export function setDefault(obstacle: Obstacle) {
+        defaultObstacle = obstacle
     }
 }

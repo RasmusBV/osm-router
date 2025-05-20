@@ -1,61 +1,64 @@
 import { TransformCallback, Writable } from "stream";
 import { createReadStream } from "fs"
 import { OSMTransform } from "osm-pbf-parser-node"
-import { WarningType, type WarningData, Warning, warning } from "../warnings.js";
+import { Info } from "../logging.js";
 import * as OSM from "../types.js"
 import type { Obstacle } from "./obstacles.js";
-
+import { ProcessTurn, buildGraph } from "./graph.js";
+import { buildJunctionMap } from "./junctions.js";
+import { buildRestrictionMap } from "./restrictions.js";
+import TypedEventEmitter from "../typedEmitter.js"
 export type ElementHandler<T extends OSM.Element> = (
     element: T, 
     relations: OSM.Relation[] | undefined,
     data: OSMData
 ) => boolean
 
-export type OSMOptions = {
-    filter: (element: OSM.Element) => boolean,
-    warning: (warn: Warning<any>) => void
+
+type OSMDataEvents = {
+    warning: (warn: Info) => void,
+    info: (object: Info) => void
 }
 
-export class OSMData {    
+export type OSMOptions = {
+    filter: (element: OSM.Element) => boolean
+}
+
+export class OSMData extends TypedEventEmitter<OSMDataEvents> {    
     public obstacles = new Map<OSM.Node, Obstacle[]>()
+    
     public nodes = new Map<OSM.NodeId, OSM.Node>()
     
     public ways = new Map<OSM.WayId, OSM.ProcessedWay>()
     public nodeToWayMap = new Map<OSM.NodeId, OSM.WayId[]>()
     
-    public relations = new Map<OSM.Id, OSM.Relation[]>()
-    public relationList: OSM.Relation[] = []
+    public relations = new Map<OSM.RelationId, OSM.Relation>()
+    public elementToRelationMap = new Map<OSM.Id, OSM.Relation[]>()
 
     constructor(
-        public options: Partial<OSMOptions>
-    ) {}
-
-    static async from(
-        path: string | string[],
-        options: Partial<OSMOptions> = {}
+        public options: Partial<OSMOptions> = {}
     ) {
-        const data = new OSMData(options)
-        if(Array.isArray(path)) {
-            await Promise.all(path.map((_path) => data.read(_path)))
-        } else {
-            await data.read(path)
-        }
-        return data
+        super()
     }
 
-    processNodes(handler: ElementHandler<OSM.Node>) {
-        for(const element of this.nodes.values()) {
-            if(!handler(element, this.relations.get(element.id), this)) {
-                this.nodes.delete(element.id)
+    process<T extends OSM.Element>(type: T["type"], handler: ElementHandler<T>) {
+        const map = this[`${type}s`]
+        let i = 0
+        const amount = map.size
+        const interval = globalThis.setInterval(() => {
+            this.emit("info", new Info.Progress({[type]: [i, amount]}))
+        }, 2000)
+        try {
+            for(const element of map.values()) {
+                if(!handler(element as any, this.elementToRelationMap.get(element.id), this)) {
+                    map.delete(element.id as any)
+                }
+                i++
             }
-        }
-        return this
-    }
-    processWays(handler: ElementHandler<OSM.ProcessedWay>) {
-        for(const element of this.ways.values()) {
-            if(!handler(element, this.relations.get(element.id), this)) {
-                this.ways.delete(element.id)
-            }
+        } catch(e) {
+            throw e
+        } finally {
+            globalThis.clearInterval(interval)
         }
         return this
     }
@@ -69,16 +72,25 @@ export class OSMData {
         nodeObstacles.push(obstacle)
     }
     
+    build(processTurn: ProcessTurn) {
+        const junctions = buildJunctionMap(this)
+        
+        this.emit("info", new Info.Message("Built junction map"))
+        const restrictions = buildRestrictionMap(this)
+        this.emit("info", new Info.Message("Built restriction map"))
+        return buildGraph(this, junctions, restrictions, processTurn)
+    }
+    
     getObstacles(way: OSM.Way, from: OSM.Node, to: OSM.Node) {
         const allNodes: OSM.Node[] = []
         let inBetween = false
         for(const nodeId of way.refs) {
             const node = this.nodes.get(nodeId)
             if(!node) {
-                this.warn(
-                    WarningType.MissingNode, 
+                this.emit("warning", new Info.ErrorLike(
+                    "Missing Node", 
                     { nodeId, way }
-                )
+                ))
                 continue 
             }
             if(node === from || node === to) {
@@ -92,14 +104,72 @@ export class OSMData {
         return allNodes.map((node) => this.obstacles.get(node)).filter((obstacle) => obstacle !== undefined).flat()
     }
 
-    warn<T extends WarningType>(type: T, data: WarningData[T]) {
-        if(!this.options.warning) { return }
-        this.options.warning(warning(type, data))
+    async read(path: string) {
+        
+        const interval = globalThis.setInterval(() => {
+            
+            this.emit("info", new Info.Progress({
+                nodes: [this.nodes.size],
+                ways: [this.ways.size],
+                relations: [this.relations.size]
+            }))
+        }, 2000)
+        try {
+            this.emit("info", new Info.Message("First read pass"))
+            await this.#readPass(path, this.#firstPass.bind(this))
+            this.emit("info", new Info.Message("Second read pass"))
+            await this.#readPass(path, this.#secondPass.bind(this))
+        } catch(e) {
+            throw e
+        } finally {
+            globalThis.clearInterval(interval)
+        }
     }
 
-    async read(path: string) {
-        await this.#readPass(path, this.#firstPass.bind(this))
-        await this.#readPass(path, this.#secondPass.bind(this))
+    loadNode(element: OSM.Node) {
+        this.nodes.set(element.id, element)
+    }
+    loadWay(element: OSM.Way) {
+        const way = Object.assign(element, OSM.defaultWayInfo())
+        for(const nodeId of element.refs) {
+            let ways = this.nodeToWayMap.get(nodeId)
+            if(!ways) {
+                ways = []
+                this.nodeToWayMap.set(nodeId, ways)
+            }
+            if(!ways.includes(way.id)) {
+                ways.push(way.id)
+            }
+        }
+        this.ways.set(element.id, way)
+    }
+    loadRelation(element: OSM.Relation) {
+        if(element.tags?.type !== "restriction") { return }
+        this.relations.set(element.id, element)
+        if(!element.members || !Array.isArray(element.members)) { return }
+        for(const member of element.members) {
+            let relations = this.elementToRelationMap.get(member.ref)
+            if(!relations) {
+                relations = []
+                this.elementToRelationMap.set(member.ref, relations)
+            }
+            relations.push(element)
+        }
+    }
+
+    readElement(element: OSM.Element) {
+        switch(element.type) {
+            case "node": {
+                this.loadNode(element)
+                break
+            } case "way": {
+                this.loadWay(element)
+                break
+            } case "relation": {
+                this.loadRelation(element)
+                break
+            }
+        }
     }
 
     #readPass(path: string, callback: (element: OSM.Element) => (Error | void)) {
@@ -124,38 +194,18 @@ export class OSMData {
         })
     }
 
-    #firstPass(element: OSM.Element): void | Error {
+
+    #firstPass(element: OSM.Element) {
         if(element.type !== "way") { return }
-        const way = Object.assign(element, OSM.defaultWayInfo())
-        for(const nodeId of element.refs) {
-            let ways = this.nodeToWayMap.get(nodeId)
-            if(!ways) {
-                ways = []
-                this.nodeToWayMap.set(nodeId, ways)
-            }
-            if(!ways.includes(way.id)) {
-                ways.push(way.id)
-            }
-        }
-        this.ways.set(element.id, way)
+        this.loadWay(element)
     }
 
-    #secondPass(element: OSM.Element): void | Error {
+    #secondPass(element: OSM.Element) {
         if(element.type === "node") {
             if(!this.nodeToWayMap.has(element.id)) { return }
-            this.nodes.set(element.id, element)
+            this.loadNode(element)
         } else if(element.type === "relation") {
-            if(element.tags?.type !== "restriction") { return }
-            this.relationList.push(element)
-            if(!element.members || !Array.isArray(element.members)) { return }
-            for(const member of element.members) {
-                let relations = this.relations.get(member.ref)
-                if(!relations) {
-                    relations = []
-                    this.relations.set(member.ref, relations)
-                }
-                relations.push(element)
-            }
+            this.loadRelation(element)
         }
     }
 }

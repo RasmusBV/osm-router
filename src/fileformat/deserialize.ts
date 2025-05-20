@@ -1,65 +1,71 @@
-import * as Format from "./format.js"
-import * as Header from "./header.js"
-import * as SectionTable from "./sectionTable.js"
 import * as Accessors from "./accessors.js"
-import type { ReadableStreamReadResult } from "stream/web"
-
-type RetypedReadableStreamBYOBReader = Omit<ReadableStreamBYOBReader, "read"> & {
-    read: <T extends ArrayBufferView>(
-        view: T, 
-        options?: {min?: number}
-    ) => Promise<ReadableStreamReadResult<T>>
-}
-
-type Deserialized = {
-    header: Format.Header;
-    sections: Format.SerializedSection[];
-    sectionTable: (Format.SectionTableEntry | Format.UnknownSectionTableEntry)[];
-}
-
-export async function deserialize(_reader: ReadableStreamBYOBReader): Promise<Deserialized> {
-    const reader = _reader as RetypedReadableStreamBYOBReader
-    const read = async(view: DataView<ArrayBuffer>, min: number, allowDone: boolean) => {
-        const { done, value } = await reader.read(view, {min})
-        if( (done && !allowDone) || !value ) {
-            throw new Error(`Stream ended early`)
-        }
-        return { done, value }
-    }
-    const headerBuffer = await read(new DataView(new ArrayBuffer(Format.HEADER_SIZE)), Format.HEADER_SIZE, false)
-    const header = Header.deserialize(headerBuffer.value)
-    const sectionTableBuffer = await read(new DataView(new ArrayBuffer(header.sectionTableSize)), header.sectionTableSize, false)
-    const sectionTable = SectionTable.deserialize(sectionTableBuffer.value, header)
-
-    const sections: Format.SerializedSection[] = []
-    const disposableBufferSize = 16 * 1024
-    let disposableBuffer = new DataView(new ArrayBuffer(disposableBufferSize))
-    for(let i = 0; i < sectionTable.length; i++) {
-        const section = sectionTable[i]
-        if("name" in section) {
-            const { value } = await read(new DataView(new ArrayBuffer(section.size)), section.size, i === sectionTable.length-1)
-            sections.push({buffer: value, name: section.name, flags: section.flags})
-        } else {
-            // Unknown section. Skipping
-            let remaining = section.size
-            while(remaining > 0) {
-                const readSize = Math.min(disposableBufferSize, remaining)
-                const { value } = await read(disposableBuffer, readSize, i === sectionTable.length-1)
-                disposableBuffer = value
-                remaining -= readSize
-            }
-        }
-    }
-    return { header, sections, sectionTable }
-}
+import * as Format from "./format.js"
+import * as geokdbush from 'geokdbush';
+import { Deserialized } from "../bin-helper/index.js"
 
 const requiredSectionNames =  ["index", "nodes", "edges", "edgeList", "nodeList", "connectionsList"] as const
 
 type RequiredSectionNames = (typeof requiredSectionNames)[number]
 
+export type NodeObject = {
+    osmId: number;
+    lon: number;
+    lat: number;
+    edgeListIndex: number;
+    edgeListLength: number;
+}
+
+export type ConnectionObject = {edgeIndex: number, cost: number}
+
+export type EdgeObject = {
+    index: number
+    nodes: NodeObject[],
+    fromEdges: ConnectionObject[]
+    toEdges: ConnectionObject[]
+}
+
 export class GraphAccessor extends Accessors.DataAccessor<RequiredSectionNames> {
-    constructor(deserialized: Deserialized) {
+    constructor(deserialized: Deserialized<Format.FormatDefinition, Format.SectionDefinitions>) {
         super(requiredSectionNames, deserialized.header, deserialized.sections)
+    }
+
+    toObject<T extends Record<string, (index: number) => number>>(index: number, accessor: T) {
+        return Object.fromEntries(
+            Object.entries(accessor)
+            .map(([key, accessor]) => ([key, accessor(index)]))
+        ) as {[K in keyof T]: number}
+    }
+
+    getNodeObject(nodeIndex: number): NodeObject {
+        return this.toObject(nodeIndex, this.accessors.nodes)
+    }
+
+    getEdgeObject(edgeIndex: number) {
+        const edge: EdgeObject = {
+            index: edgeIndex,
+            nodes: [],
+            fromEdges: [],
+            toEdges: []
+        }
+        this.listEdgeNodes(edgeIndex, (nodeIndex) => {
+            const node = this.toObject(nodeIndex, this.accessors.nodes)
+            edge.nodes.push(node)
+        })
+        this.listFromEdges(edgeIndex, (fromEdgeIndex) => {
+            edge.fromEdges.push(this.toObject(fromEdgeIndex, this.accessors.connectionsList))
+        })
+        this.listToEdges(edgeIndex, (toEdgeIndex) => {
+            edge.fromEdges.push(this.toObject(toEdgeIndex, this.accessors.connectionsList))
+        })
+        return edge
+    }
+    getNearbyNodes(
+        lon: number, 
+        lat: number,
+        maxResults?: number, 
+        maxDistanceMeters?: number
+    ) {
+        return geokdbush.around(this.accessors.index as any, lon, lat, maxResults, maxDistanceMeters ? maxDistanceMeters/1000 : undefined) as number[]
     }
 
     listNodeEdges(nodeIndex: number, callback: (edgeIndex: number, listIndex: number, listLength: number) => any) {
@@ -104,8 +110,8 @@ export class GraphAccessor extends Accessors.DataAccessor<RequiredSectionNames> 
         }
     }
 
-    static async fromReadable(reader: ReadableStreamBYOBReader) {
-        const deserialized = await deserialize(reader)
+    static async fromPath(path: string) {
+        const deserialized = await Format.helper.deserialize(path)
         return new GraphAccessor(deserialized)
     }
 }

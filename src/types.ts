@@ -1,4 +1,3 @@
-
 export type Node = {
     type: "node",
     id: NodeId,

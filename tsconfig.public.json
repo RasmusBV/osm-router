@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": true,
+    "inlineSources": true,
+    "rootDir": "src",
+    "outDir": "public",
+  },
+  "exclude": ["**/demo"]
+}

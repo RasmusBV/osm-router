@@ -1,24 +1,33 @@
 import * as Types from "./types.js"
 
-export const getTag = (item: Types.Element, key: string) => {
-    return item.tags ? item.tags[key] : undefined
-}
-
-export const tagValueLookup = <T extends Record<string, any>>(item: Types.Element, key: string, record: T): (T[keyof T] | undefined) => {
-    const tagValue = getTag(item, key)
+/**
+ * Lookup the value of a tag in a seperate object
+ * @param element The OSM element which contains the tag to check.
+ * @param key The tag to check.
+ * @param record An object with keys corresponding to potential tag values
+ * 
+ */
+export const tagValueLookup = <T extends Record<string, any>>(element: Types.Element, key: string, record: T): (T[keyof T] | undefined) => {
+    const tagValue = element.tags?.[key]
     if(!tagValue) { return undefined }
     const recordValue = record[tagValue]
     return recordValue
 }
 
-export const getForwardBackward = (item: Types.Element, key: string): [string | undefined, string | undefined] => {
-    let forward = getTag(item, key + ":forward")
-    let backward = getTag(item, key + ":backward")
+/**
+ * Lookup tags postfixed with **:forward** and **:backward**, fill in blanks non-postfixed tag.
+ * @param way The OSM way for which to check for tags
+ * @param key The tag to check
+ * @returns `[forward, backward]`
+ */
+export const getForwardBackward = (way: Types.Way, key: string): [string | undefined, string | undefined] => {
+    let forward = way.tags?.[key + ":forward"]
+    let backward = way.tags?.[key + "backward"]
     if(!forward || !backward) {
-        const common = getTag(item, key)
-        if(getTag(item, "is_forward_oneway")) {
+        const common = way.tags?.[key]
+        if(way.tags?.is_forward_oneway) {
             forward = forward ?? common
-        } else if(getTag(item, "is_reverse_oneway")) {
+        } else if(way.tags?.is_reverse_oneway) {
             backward = backward ?? common
         } else {
             forward = forward ?? common
@@ -27,19 +36,26 @@ export const getForwardBackward = (item: Types.Element, key: string): [string | 
     }
     return [forward, backward]
 }
-
-export const getForwardBackwardArray = (item: Types.Element, keys: Iterable<string>): [string | undefined, string | undefined] => {
+/**
+ * Lookup tags postfixed with **:forward** and **:backward**, fill in blanks non-postfixed tag.
+ * @param way The OSM way for which to check for tags
+ * @param keys The tags to check
+ * @returns `[forward, backward]`
+ * 
+ * This function will check all keys in the order they are provided, and return the first non-undefined value for forward and backward.
+ */
+export const getForwardBackwardArray = (way: Types.Way, keys: Iterable<string>): [string | undefined, string | undefined] => {
     let forward: string | undefined = undefined
     let backward: string | undefined = undefined
     for(const key of keys) {
         if(!forward) {
-            forward = getTag(item, key + ":forward")
+            forward = way.tags?.[key + ":forward"]
         }
         if(!backward) {
-            backward = getTag(item, key + ":backward")
+            backward = way.tags?.[key + "backward"]
         }
         if(!forward || !backward) {
-            const common = getTag(item, key)
+            const common = way.tags?.[key]
             forward = forward ?? common
             backward = backward ?? common
         }
@@ -48,16 +64,33 @@ export const getForwardBackwardArray = (item: Types.Element, keys: Iterable<stri
     return [forward, backward]
 }
 
-export const prefixValue = (item: Types.Element, values: Iterable<string>, prefix: string) => {
+/**
+ * Lookup tags in a list of values, prefixed with a given prefix.
+ * @param element The OSM element which contains the tag to check.
+ * @param values The list of values to check for.
+ * @param prefix The prefix to use for the tag.
+ * 
+ * This function will check all values in the order they are provided, and return the first non-undefined value.
+ */
+export const prefixValue = (element: Types.Element, values: Iterable<string>, prefix: string) => {
     for(const value of values) {
-        const tagValue = getTag(item, prefix + ":" + value)
+        const tagValue = element.tags?.[prefix + ":" + value]
         if(tagValue) { return tagValue }
     }
 }
 
-export const postfixValue = (item: Types.Element, values: Iterable<string>, postfix: string) => {
+
+/**
+ * Lookup tags in a list of values, postfixed with a given postfix.
+ * @param element The OSM element which contains the tag to check.
+ * @param values The list of values to check for.
+ * @param postfix The postfix to use for the tag.
+ *  
+ * This function will check all values in the order they are provided, and return the first non-undefined value.
+ */
+export const postfixValue = (element: Types.Element, values: Iterable<string>, postfix: string) => {
     for(const value of values) {
-        const tagValue = getTag(item, value + ":" + postfix)
+        const tagValue = element.tags?.[value + ":" + postfix]
         if(tagValue) { return tagValue }
     }
 }
@@ -69,6 +102,11 @@ const unitToKmph: Record<string, number> = {
 
 export const kmphToMs = (10/36)
 
+/**
+ * Convert a string to meters per second
+ * @param val The value to convert, can be a string or undefined
+ * @returns The value in meters per second, or undefined if the value could not be parsed
+ */
 export const convertToMetersPerSecond = (val: string | undefined ) => {
     if(val === undefined) { return undefined }
     let amount = parseFloat(val)
@@ -98,6 +136,11 @@ const lengthConvertions: Record<string, number> = {
     "mi": 1_609.344
 }
 
+/**
+ * Parse a string containing some length value, and convert it to meters
+ * @param val The value to convert, can be a string or undefined
+ * @returns The value in meters, or undefined if the value could not be parsed
+ */
 export const convertToMeters = (val: string | undefined) => {
     if(!val) { return undefined }
     const feetAndInches = parseFeetAndInches(val)
