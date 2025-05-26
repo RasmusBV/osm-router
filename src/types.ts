@@ -65,8 +65,9 @@ export type Member = WayMember | NodeMember | RelationMember
 export type RelationId = number & {__brand: Relation}
 
 export type Id = NodeId | WayId | RelationId
-export type Element = Node | Way | Relation
+export type RawElement = Node | Way | Relation
 
+export type Element = Node | ProcessedWay | Relation
 
 export type Edge = {
     way: ProcessedWay, 

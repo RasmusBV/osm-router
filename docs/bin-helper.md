@@ -37,6 +37,8 @@ type Section = {
 }
 ```
 
+Note that all the DataViews are constructed with individual underlying ArrayBuffers. They can therefore be used interchangably, and if another view like `Uint8Array` fits a use case better, the entire arraybuffer can be used in the `Uint8Array` constructor without risk of reading into another section.
+
 # File Format
 The *Header* and *Section Table* always use the big endian format.
 

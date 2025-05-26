@@ -12,11 +12,12 @@ export namespace Info {
     export class Progress implements Info {
         type = "Progress"
         constructor(
-            public progress: Record<string, [number, number?]>
+            public message: string,
+            public progress: Record<string, [number, number?]>,
         ) {}
 
         toString() {
-            return this.type + "\n" + Object.entries(this.progress).map(([name, progress]) => {
+            return this.type + " (" + this.message + ")\n" + Object.entries(this.progress).map(([name, progress]) => {
                 if(progress.length > 1) {
                     return `${name}: ${progress[0]} / ${progress[1]}`
                 } else {

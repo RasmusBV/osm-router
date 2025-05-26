@@ -21,8 +21,8 @@
     },
     "scripts": {
         "build": "del-cli public && npx tsc -p tsconfig.public.json",
-        "preprocess": "node -max-old-space-size=8192 ./dist/demo/preprocess.js ./graph.bin",
-        "demo": "node ./dist/demo/app.js ./graph.bin 8080"
+        "preprocess": "node -max-old-space-size=8192 ./dist/demo/preprocess.js ./static/graph.bin",
+        "demo": "node ./dist/demo/app.js ./static/graph.bin"
     },
     "files": [
         "public"

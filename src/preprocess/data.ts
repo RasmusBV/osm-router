@@ -8,8 +8,9 @@ import { ProcessTurn, buildGraph } from "./graph.js";
 import { buildJunctionMap } from "./junctions.js";
 import { buildRestrictionMap } from "./restrictions.js";
 import TypedEventEmitter from "../typedEmitter.js"
-export type ElementHandler<T extends OSM.Element> = (
-    element: T, 
+
+export type ElementHandler<T extends OSM.Element["type"]> = (
+    element: Extract<OSM.Element, {type: T}>, 
     relations: OSM.Relation[] | undefined,
     data: OSMData
 ) => boolean
@@ -25,14 +26,13 @@ export type OSMOptions = {
 }
 
 export class OSMData extends TypedEventEmitter<OSMDataEvents> {    
-    public obstacles = new Map<OSM.Node, Obstacle[]>()
     
     public nodes = new Map<OSM.NodeId, OSM.Node>()
-    
     public ways = new Map<OSM.WayId, OSM.ProcessedWay>()
-    public nodeToWayMap = new Map<OSM.NodeId, OSM.WayId[]>()
-    
     public relations = new Map<OSM.RelationId, OSM.Relation>()
+
+    public obstacles = new Map<OSM.Node, Obstacle[]>()
+    public nodeToWayMap = new Map<OSM.NodeId, OSM.WayId[]>()
     public elementToRelationMap = new Map<OSM.Id, OSM.Relation[]>()
 
     constructor(
@@ -41,24 +41,20 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         super()
     }
 
-    process<T extends OSM.Element>(type: T["type"], handler: ElementHandler<T>) {
+    process<T extends OSM.Element["type"]>(type: T, handler: ElementHandler<NoInfer<T>>) {
         const map = this[`${type}s`]
+        let current = Date.now()
         let i = 0
         const amount = map.size
-        const interval = globalThis.setInterval(() => {
-            this.emit("info", new Info.Progress({[type]: [i, amount]}))
-        }, 2000)
-        try {
-            for(const element of map.values()) {
-                if(!handler(element as any, this.elementToRelationMap.get(element.id), this)) {
-                    map.delete(element.id as any)
-                }
-                i++
+        for(const element of map.values()) {
+            if(i%10_000 === 0 && Date.now() - 2000 > current) {
+                current = Date.now()
+                this.emit("info", new Info.Progress("processing", {[type]: [i, amount]}))
             }
-        } catch(e) {
-            throw e
-        } finally {
-            globalThis.clearInterval(interval)
+            if(!handler(element as any, this.elementToRelationMap.get(element.id), this)) {
+                map.delete(element.id as any)
+            }
+            i++
         }
         return this
     }
@@ -72,7 +68,7 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         nodeObstacles.push(obstacle)
     }
     
-    build(processTurn: ProcessTurn) {
+    build(processTurn?: ProcessTurn) {
         const junctions = buildJunctionMap(this)
         
         this.emit("info", new Info.Message("Built junction map"))
@@ -108,7 +104,7 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         
         const interval = globalThis.setInterval(() => {
             
-            this.emit("info", new Info.Progress({
+            this.emit("info", new Info.Progress("parsing", {
                 nodes: [this.nodes.size],
                 ways: [this.ways.size],
                 relations: [this.relations.size]

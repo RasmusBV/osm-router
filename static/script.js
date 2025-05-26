@@ -1,27 +1,27 @@
 "strict"
-const map = L.map('map').setView([55.67, 12.58], 12);
+const map = L.map('map').setView([48.85, 2.34], 12);
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
 
-const from = L.marker([55.6905, 12.5377], {
+const from = L.marker([48.8512, 2.3329], {
     draggable: true
 }).addTo(map)
 
-const to = L.marker([55.6610, 12.6178], {
+const to = L.marker([48.8553, 2.3595], {
     draggable: true
 }).addTo(map)
 
-const via = L.marker([55.6610, 12.56], {
+const via = L.marker([48.8513, 2.3561], {
     draggable: true
 }).addTo(map)
 
 const MIN = 0
 const MAX = 2000
 
-const circle = L.circle([55.6610, 12.56], {
+const circle = L.circle([48.8513, 2.3561], {
     color: 'red',
     fillColor: '#f03',
     fillOpacity: 0.2,

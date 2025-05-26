@@ -7,7 +7,7 @@ This is instead meant to be a router for augmenting and modifying routes generat
 
 As such it does not feature any kind of graph augmentation like *Contraction Hierarchies* or *Multilevel Djikstras*, as they do not allow for arbitrary dynamic cost functions. The routing therefore is pretty slow, especially if you use a complicated dynamic cost function, which is what this was built for. 10 kilometers is around the limit for acceptable performance.
 
-# The Parts
+# **Usage**
 
 ## Routing Engine
 The engine currently features 2 routing algorithms, *Djikstras* and *Bidirectional djikstras*.
@@ -18,13 +18,15 @@ Shown here with the two examples from the demo, one avoids the circle, and one i
 
 ![Demo Showcase](./docs/assets/demo_showcase.gif)
 
+To run the demo on your machine, check out `docs/demo.md`
+
 ## Preprocessing Pipeline
 Like those optimized routing engines, this one also relies on a preprocessing pipeline to create a routable graph from OpenStreetMap data.
 This preprocessing pipeline is inspired by OSRM, and has the same `processNode`, `processWay` & `processTurn` pipeline stages.
 
 Do not expect to be able to get this running with `planet.osm.pbf`, the main bottleneck currently is that the JavaScript `Map` is bounded to a maximum of `2^24 (16.777.216)` entries ([source](https://stackoverflow.com/a/54466812)), which limits the amount of nodes that can be loaded.
 
-For a full demonstration of how to use this and more, check out `./src/demo`.
+For a full demonstration of how to use this and more, check out `src/demo/preprocess.ts`.
 
 Here is a simplified example. 
 
@@ -38,8 +40,7 @@ await data.read("./example.osm.pbf")
 
 // Preprocessing OSM Nodes.
 data.process("node", (node, relations, data) => {
-    const barrier = Utils.getTag(node, "barrier")
-    if(barrier) {
+    if(node.tags?.barrier) {
         return false
     }
     return true
@@ -47,7 +48,7 @@ data.process("node", (node, relations, data) => {
 
 // Preprocessing OSM Ways.
 data.process("way", (way, relations, data) => {
-    const maxSpeedString = Utils.getTag(way, "maxspeed")
+    const maxSpeedString = way.tags?.maxspeed
     if(!maxSpeedString) { return true }
     const maxSpeed = parseFloat(maxSpeedString)
     if(!isNan(maxSpeed)) {
@@ -72,3 +73,55 @@ await writeFile("./graph.bin", serialized.out)
 ```
 
 The resulting file is in a custom binary format. For more information check out `docs/fileformat.md`.
+
+# **API**
+
+# OSMData(options?)
+Returns a new `OSMData` instance which is an `EventEmitter` subclass.
+
+## Options
+Type: `object`
+
+### filter
+
+Type: `Function`
+
+Filter function that will be called when reading in elements from an `osm.pbf` file.
+
+For an example see `src/demo/preprocess.ts`
+
+# OSMData instance
+
+## .process(type, handler)
+Process a specific type of OSM Element
+
+### type
+
+type: `"node" | "way" | "relation"`
+
+The type of element to process
+
+### handler
+
+type: `Function`
+
+The function responsible for processing the type of element selected with the `type` parameter.
+To process the element, the function is expected to mutate it, while still conforming to the element type.
+
+If the handler returns a falsy value, the element will be discarded and not used to build the final graph.
+
+See the **Processing elements** (TODO) section for details.
+
+## .build(processTurn?)
+Build the routable graph from the OpenStreetMap that have been read and processed so far.
+Should be called after reading in an `.osm.pbf` file and processing it with `.process`.
+
+### processTurn
+
+type `Function`
+
+The function responsible for assigning costs to each turn in the graph.
+
+If the handler returns `undefined`, the turn is discarded and the final graph will not contain it.
+
+See the **Graph Structure** (TODO) section for details.

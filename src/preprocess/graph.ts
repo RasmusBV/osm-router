@@ -74,7 +74,7 @@ export function buildGraph(
         for(const [viaNode, toJunction] of junctions) {
             if(i%10_000 === 0 && Date.now() - 2000 > current) {
                 current = Date.now()
-                data.emit("info", new Info.Progress({
+                data.emit("info", new Info.Progress("graph building", {
                     junctions: [i, amount]
                 }))
             }

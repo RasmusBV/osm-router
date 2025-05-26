@@ -79,6 +79,7 @@ import * as fs from "fs"
                     const result = route(query)
                     if(!result) {
                         res.writeHead(404).end()
+                        return
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' })
                     res.end(JSON.stringify({
@@ -97,8 +98,8 @@ import * as fs from "fs"
             }
 
         } catch(e) {
-            res.writeHead(500).end()
             console.warn(e)
+            res.writeHead(500).end()
         }
     }).listen(port, () => {
         console.log(`Listening on port: ${port}`)

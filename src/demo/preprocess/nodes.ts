@@ -1,4 +1,4 @@
-import { OSM, Utils, Preprocess } from "../../index.js"
+import { OSM, Preprocess } from "../../index.js"
 import { profile } from "./profile.js"
 
 // Inspired by the car profile from project OSRM

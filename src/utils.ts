@@ -85,7 +85,7 @@ export const prefixValue = (element: Types.Element, values: Iterable<string>, pr
  * @param element The OSM element which contains the tag to check.
  * @param values The list of values to check for.
  * @param postfix The postfix to use for the tag.
- *  
+ * 
  * This function will check all values in the order they are provided, and return the first non-undefined value.
  */
 export const postfixValue = (element: Types.Element, values: Iterable<string>, postfix: string) => {
