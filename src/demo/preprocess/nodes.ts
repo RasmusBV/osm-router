@@ -1,10 +1,10 @@
-import { OSM, Preprocess } from "../../index.js"
+import { OSM, Preprocess, Utils } from "../../index.js"
 import { profile } from "./profile.js"
 
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
-export function processNode(node: OSM.Node, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) {
+export function processNode<T>(node: OSM.ProcessedNode<T>, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) {
     const access = profile.access_tags_hierarchy.find((tag) => node.tags?.[tag])
     const barrier = node.tags?.barrier
     const highway = node.tags?.highway
@@ -15,9 +15,10 @@ export function processNode(node: OSM.Node, relations: OSM.Relation[] | undefine
             profile.access_tag_blacklist.has(accessVal) && 
             !profile.restricted_access_tag_list.has(accessVal)
         ) {
+            
             const obstacle = Preprocess.Obstacle.getDefault()
             obstacle.type = Preprocess.Obstacle.types.barrier
-            data.addObstacle(node, obstacle)
+            Utils.addObstacle(node, obstacle)
         }
     } else if(barrier) {
         const bollard = node.tags?.bollard
@@ -34,11 +35,11 @@ export function processNode(node: OSM.Node, relations: OSM.Relation[] | undefine
         ) {
             const obstacle = Preprocess.Obstacle.getDefault()
             obstacle.type = Preprocess.Obstacle.types.barrier
-            data.addObstacle(node, obstacle)
+            Utils.addObstacle(node, obstacle)
         }
     } else if(highway) {
         let type: Preprocess.Obstacle.Type | undefined = Preprocess.Obstacle.types[highway as Preprocess.Obstacle.Type]
-        if(!type || type === Preprocess.Obstacle.types.barrier) { return true }
+        if(!type || type === Preprocess.Obstacle.types.barrier) { return node }
         let direction = node.tags?.direction
         let duration = 0
         switch(type) {
@@ -57,7 +58,7 @@ export function processNode(node: OSM.Node, relations: OSM.Relation[] | undefine
             }
         }
         const qualifiedDirection = Preprocess.Obstacle.directions[direction as Preprocess.Obstacle.Direction] ?? Preprocess.Obstacle.directions.none
-        data.addObstacle(node, {type, direction: qualifiedDirection, duration})
+        Utils.addObstacle(node, {type, direction: qualifiedDirection, duration})
     }
-    return true
+    return node
 }

@@ -1,5 +1,5 @@
 import { processNode } from "./preprocess/nodes.js"
-import { processWay } from "./preprocess/ways.js"
+import { wayProcessors } from "./preprocess/ways.js"
 import { processTurn } from "./preprocess/turns.js"
 import { OSMData } from "../index.js"
 import * as fs from "fs/promises"
@@ -27,10 +27,12 @@ import * as fs from "fs/promises"
         console.log(info.toString())
     })
     await data.read(inputFilePath)
-    const graph = data
-        .process("node", processNode)
-        .process("way", processWay)
-        .build(processTurn)
+    data.process("node", processNode)
+    for(const processor of wayProcessors) {
+        data.process("way", processor)
+    }
+    const graph = data.build(processTurn)
+
     const serialized = await graph.serialize()
     await fs.writeFile(outputFilePath, serialized.out)
     console.log("Done")

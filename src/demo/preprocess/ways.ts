@@ -1,17 +1,10 @@
-import { OSM, Utils, Preprocess } from "../../index.js"
+import { OSM, Utils } from "../../index.js"
 import { profile } from "./profile.js"
 
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
-export function processWay(way: OSM.ProcessedWay, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) {
-    for(const handler of handlers) {
-        if(!handler(way, relations, data)) { return false }
-    }
-    return true
-}
-
-const handlers: ((way: OSM.ProcessedWay, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) => boolean)[] = [
+export const wayProcessors = [
     blocked,
     avoid,
     access,
@@ -25,55 +18,52 @@ const handlers: ((way: OSM.ProcessedWay, relations: OSM.Relation[] | undefined, 
     penalties
 ]
 
-function blocked(way: OSM.ProcessedWay) {
+function blocked<T>(way: OSM.ProcessedWay<T>) {
     // Areas
-    if(way.tags?.area === "yes") { return false }
-
-    // Toll roads
-    //if(Utils.getTag(way, "toll") === "yes") { return false }
+    if(way.tags?.area === "yes") { return }
 
     // Public Transit
     const publicServiceVehicle = way.tags?.psv
     const highway = way.tags?.highway
     if(publicServiceVehicle === "yes" || publicServiceVehicle === "designated") {
-        return false
+        return
     }
     const bus = way.tags?.bus
     if(bus === "yes" || bus === "designated") {
-        return false
+        return
     }
 
     // Steps
     if(profile.avoid.has("steps") && highway === "steps") {
-        return false
+        return
     }
 
     // Construction
-    if(highway === "construction") { return false }
-    if(way.tags?.railway === "construction") { return false }
+    if(highway === "construction") { return }
+    if(way.tags?.railway === "construction") { return }
     const construction = way.tags?.construction
-    if(construction && !profile.construction_whitelist.has(construction)) { return false }
+    if(construction && !profile.construction_whitelist.has(construction)) { return }
 
     // Proposed
-    if(way.tags?.proposed !== undefined) { return false }
+    if(way.tags?.proposed !== undefined) { return }
 
     // Reversible oneway
-    if(way.tags?.oneway === "reversible") { return false }
+    if(way.tags?.oneway === "reversible") { return }
 
     // Impassable
-    if(way.tags?.impassable === "yes") { return false }
-    if(way.tags?.status === "impassable") { return false }
+    if(way.tags?.impassable === "yes") { return }
+    if(way.tags?.status === "impassable") { return }
 
-    return true
+    return way
 }
 
-function avoid(way: OSM.ProcessedWay) {
+function avoid<T>(way: OSM.ProcessedWay<T>) {
     const highway = way.tags?.highway
-    if(profile.avoid.has(highway)) { return false }
-    return true
+    if(profile.avoid.has(highway)) { return }
+    return way
 }
 
-function access(way: OSM.ProcessedWay) {
+function access<T>(way: OSM.ProcessedWay<T>) {
     const [forwardAccess, backwardAccess] = Utils.getForwardBackwardArray(way, profile.access_tags_hierarchy)
     const highway = way.tags?.highway
     if(profile.restricted_highway_whitelist.has(highway)) {
@@ -89,12 +79,12 @@ function access(way: OSM.ProcessedWay) {
         way.innaccessible.backward = true
     }
     if(way.innaccessible.forward && way.innaccessible.backward) {
-        return false
+        return
     }
-    return true
+    return way
 }
 
-function oneway(way: OSM.ProcessedWay) {
+function oneway<T>(way: OSM.ProcessedWay<T>) {
     const oneway = Utils.prefixValue(way, profile.restrictions, "oneway") ?? way.tags?.oneway
     if(oneway === "-1") {
         way.innaccessible.forward = true
@@ -111,29 +101,28 @@ function oneway(way: OSM.ProcessedWay) {
             way.innaccessible.backward = true
         }
     }
-    return true
+    return way
 }
 
-function service(way: OSM.ProcessedWay) {
+function service<T>(way: OSM.ProcessedWay<T>) {
     const service = way.tags?.service
     if(service && way.tags?.foot === "yes") {
-        return false
+        return
     }
     if(profile.service_tag_forbidden.has(service)) {
-        return false
+        return
     }
-    return true
+    return way
 }
 
-// I skipped bridges because bruh
-function alternateOptions(way: OSM.ProcessedWay) {
+function alternateOptions<T>(way: OSM.ProcessedWay<T>) {
     if((way.tags?.route ?? "") in profile.route_speeds) {
-        return false
+        return
     }
-    return true
+    return way
 }
 
-function highOccupancyVehicle(way: OSM.ProcessedWay) {
+function highOccupancyVehicle<T>(way: OSM.ProcessedWay<T>) {
     const hov = way.tags?.hov
     if(hov === "designated") {
         way.restricted.forward = true
@@ -146,12 +135,12 @@ function highOccupancyVehicle(way: OSM.ProcessedWay) {
     if(backward && backward.split("|").every((val) => val === "designated")) {
         way.innaccessible.backward = true
     }
-    return true
+    return way
 }
 
-function speed(way: OSM.ProcessedWay) {
+function speed<T>(way: OSM.ProcessedWay<T>) {
     const highway = way.tags?.highway
-    if(!highway) { return false }
+    if(!highway) { return }
     const speed = profile.speeds.highway[highway] * Utils.kmphToMs
     if(speed) {
         way.speed.forward = speed
@@ -176,12 +165,12 @@ function speed(way: OSM.ProcessedWay) {
         }
     }
     if(way.speed.forward === 0 && way.speed.backward === 0) {
-        return false
+        return
     }
-    return true
+    return way
 }
 
-function maxspeed(way: OSM.ProcessedWay) {
+function maxspeed<T>(way: OSM.ProcessedWay<T>) {
     const keys = ["maxspeed:advisory", "maxspeed", "source:maxspeed", "maxspeed:type"]
     const [forward, backward] = Utils.getForwardBackwardArray(way, keys).map(parseMaxSpeedToMetersPerSecond)
     if(forward) {
@@ -190,7 +179,7 @@ function maxspeed(way: OSM.ProcessedWay) {
     if(backward) {
         way.speed.backward = backward * profile.speed_reduction
     }
-    return true
+    return way
 }
 
 function parseMaxSpeedToMetersPerSecond(source: string | undefined) {
@@ -207,15 +196,15 @@ function parseMaxSpeedToMetersPerSecond(source: string | undefined) {
     return maxSpeed
 }
 
-function surface(way: OSM.ProcessedWay) {
+function surface<T>(way: OSM.ProcessedWay<T>) {
     const surfaceSpeed = Utils.tagValueLookup(way, "surface", profile.surface_speeds)
     const tracktypeSpeed = Utils.tagValueLookup(way, "tracktype", profile.tracktype_speeds)
     const smoothnessSpeed = Utils.tagValueLookup(way, "smoothness", profile.smoothness_speeds)
     applyMaximumSpeed(way, [surfaceSpeed, tracktypeSpeed, smoothnessSpeed])
-    return true
+    return way
 }
 
-function applyMaximumSpeed(way: OSM.ProcessedWay, speeds: (number | undefined | null)[]) {
+function applyMaximumSpeed<T>(way: OSM.ProcessedWay<T>, speeds: (number | undefined | null)[]) {
     const definedSpeeds = speeds.filter((val) => typeof val === "number").map((val) => val * Utils.kmphToMs)
     way.speed.forward = Math.min(...definedSpeeds, way.speed.forward)
     way.speed.backward = Math.min(...definedSpeeds, way.speed.backward)
@@ -226,7 +215,7 @@ const minSpeed = Math.min(...Object.values(profile.speeds.highway))
 const maxSpeedPenalty = minSpeed / maxSpeed
 const speedPenaltyScaling = maxSpeedPenalty / profile.speed_penalty_min
 
-function penalties(way: OSM.ProcessedWay) {
+function penalties<T>(way: OSM.ProcessedWay<T>) {
     const servicePenalty = Utils.tagValueLookup(way, "service", profile.service_penalties) ?? 1
     const speed = Utils.tagValueLookup(way, "highway", profile.speeds.highway) ?? profile.default_speed
     const width = Utils.convertToMeters(way.tags?.width) ?? Infinity
@@ -257,5 +246,5 @@ function penalties(way: OSM.ProcessedWay) {
 
     way.multiplier.forward *= penalty
     way.multiplier.backward *= penalty
-    return true
+    return way
 }

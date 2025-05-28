@@ -1,3 +1,9 @@
+import type { Obstacle } from "./preprocess/obstacles.js"
+
+type CustomInfo<T> = {
+    custom?: T
+}
+
 export type Node = {
     type: "node",
     id: NodeId,
@@ -8,6 +14,12 @@ export type Node = {
 
 export type NodeId = number & {__brand: Node}
 
+export type ProcessedNode<T> = NodeInfo & Node & CustomInfo<T>
+
+export type NodeInfo = {
+    obstacles?: Obstacle[]
+}
+
 export type Way = {
     type: "way",
     id: WayId,
@@ -17,7 +29,7 @@ export type Way = {
 
 export type WayId = number & {__brand: Way}
 
-export type ProcessedWay = WayInfo & Way
+export type ProcessedWay<T> = WayInfo & Way & CustomInfo<T>
 
 export type WayInfo = {
     speed: Both<number>,
@@ -64,13 +76,15 @@ export type Member = WayMember | NodeMember | RelationMember
 
 export type RelationId = number & {__brand: Relation}
 
+export type ProcessedRelation<T> = Relation & CustomInfo<T>
+
 export type Id = NodeId | WayId | RelationId
+
 export type RawElement = Node | Way | Relation
+export type Element<N, W, R> = ProcessedNode<N> | ProcessedWay<W> | ProcessedRelation<R>
 
-export type Element = Node | ProcessedWay | Relation
-
-export type Edge = {
-    way: ProcessedWay, 
+export type Edge<T> = {
+    way: ProcessedWay<T>, 
     cost: number, 
     nodes: NodeId[]
 }

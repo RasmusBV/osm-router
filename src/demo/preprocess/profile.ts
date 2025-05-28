@@ -7,9 +7,7 @@ export const profile = {
     traffic_signal_penalty: 2,
     default_speed: 10,
     side_road_multiplier: 0.8,
-    turn_penalty: 7.5,
     speed_reduction: 0.8,
-    turn_bias: 1.075,
     speed_penalty_min: 0.5,
   
     barrier_whitelist: new Set<string | undefined>([

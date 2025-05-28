@@ -7,7 +7,7 @@
 export type Obstacle = {
     type: Obstacle.Type,
     direction: Obstacle.Direction,
-    duration: number
+    duration: number | undefined
 }
 
 export namespace Obstacle {
@@ -51,7 +51,7 @@ export namespace Obstacle {
     let defaultObstacle: Obstacle = {
         type: types.none,
         direction: directions.none,
-        duration: 0
+        duration: undefined
     }
 
     export function getDefault() {

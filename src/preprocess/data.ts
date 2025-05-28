@@ -9,12 +9,17 @@ import { buildJunctionMap } from "./junctions.js";
 import { buildRestrictionMap } from "./restrictions.js";
 import TypedEventEmitter from "../typedEmitter.js"
 
-export type ElementHandler<T extends OSM.Element["type"]> = (
-    element: Extract<OSM.Element, {type: T}>, 
+export type ElementHandler<T extends OSM.RawElement["type"], A, N, W, R> = (
+    element: Extract<OSM.Element<N, W, R>, {type: T}>, 
     relations: OSM.Relation[] | undefined,
-    data: OSMData
-) => boolean
+    data: OSMData<N, W, R>
+) => Extract<OSM.Element<A, A, A>, {type: T}> | undefined
 
+type ProcessStep<T extends OSM.RawElement["type"], A, N, W, R> = {
+    node: OSMData<A, W, R>
+    way: OSMData<N, A, R>
+    relation: OSMData<N, W, A>
+}[T]
 
 type OSMDataEvents = {
     warning: (warn: Info) => void,
@@ -22,16 +27,15 @@ type OSMDataEvents = {
 }
 
 export type OSMOptions = {
-    filter: (element: OSM.Element) => boolean
+    filter: (element: OSM.RawElement) => boolean
 }
 
-export class OSMData extends TypedEventEmitter<OSMDataEvents> {    
+export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDataEvents> {    
     
-    public nodes = new Map<OSM.NodeId, OSM.Node>()
-    public ways = new Map<OSM.WayId, OSM.ProcessedWay>()
-    public relations = new Map<OSM.RelationId, OSM.Relation>()
+    public nodes = new Map<OSM.NodeId, OSM.ProcessedNode<N>>()
+    public ways = new Map<OSM.WayId, OSM.ProcessedWay<W>>()
+    public relations = new Map<OSM.RelationId, OSM.ProcessedRelation<R>>()
 
-    public obstacles = new Map<OSM.Node, Obstacle[]>()
     public nodeToWayMap = new Map<OSM.NodeId, OSM.WayId[]>()
     public elementToRelationMap = new Map<OSM.Id, OSM.Relation[]>()
 
@@ -41,7 +45,7 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         super()
     }
 
-    process<T extends OSM.Element["type"]>(type: T, handler: ElementHandler<NoInfer<T>>) {
+    process<T extends OSM.RawElement["type"], A>(type: T, handler: ElementHandler<NoInfer<T>, A, N, W, R>) {
         const map = this[`${type}s`]
         let current = Date.now()
         let i = 0
@@ -51,24 +55,18 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
                 current = Date.now()
                 this.emit("info", new Info.Progress("processing", {[type]: [i, amount]}))
             }
-            if(!handler(element as any, this.elementToRelationMap.get(element.id), this)) {
+            const result = handler(element as any, this.elementToRelationMap.get(element.id), this)
+            if(!result) {
                 map.delete(element.id as any)
+            } else {
+                map.set(element.id as any, result as any)
             }
             i++
         }
-        return this
-    }
-
-    addObstacle(node: OSM.Node, obstacle: Obstacle) {
-        let nodeObstacles = this.obstacles.get(node)
-        if(!nodeObstacles) {
-            nodeObstacles = []
-            this.obstacles.set(node, nodeObstacles)
-        }
-        nodeObstacles.push(obstacle)
+        return this as any as ProcessStep<T, A, N, W, R>
     }
     
-    build(processTurn?: ProcessTurn) {
+    build(processTurn?: ProcessTurn<N, W>) {
         const junctions = buildJunctionMap(this)
         
         this.emit("info", new Info.Message("Built junction map"))
@@ -78,8 +76,9 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
     }
     
     getObstacles(way: OSM.Way, from: OSM.Node, to: OSM.Node) {
-        const allNodes: OSM.Node[] = []
+        const obstacles: Obstacle[] = []
         let inBetween = false
+        let backwards = false
         for(const nodeId of way.refs) {
             const node = this.nodes.get(nodeId)
             if(!node) {
@@ -92,12 +91,17 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
             if(node === from || node === to) {
                 if(inBetween) { break }
                 inBetween = true
+                backwards = node === to
             }
-            if(inBetween) {
-                allNodes.push(node)
+            if(!inBetween) { continue }
+            if(!node.obstacles) { continue }
+            for(const obstacle of node.obstacles) {
+                if(obstacle.direction === "backward" && !backwards) { continue }
+                if(obstacle.direction === "forward" && backwards) { continue }
+                obstacles.push(obstacle)
             }
         }
-        return allNodes.map((node) => this.obstacles.get(node)).filter((obstacle) => obstacle !== undefined).flat()
+        return obstacles
     }
 
     async read(path: string) {
@@ -153,7 +157,7 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         }
     }
 
-    readElement(element: OSM.Element) {
+    readElement(element: OSM.Element<N, W, R>) {
         switch(element.type) {
             case "node": {
                 this.loadNode(element)
@@ -168,7 +172,7 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
         }
     }
 
-    #readPass(path: string, callback: (element: OSM.Element) => (Error | void)) {
+    #readPass(path: string, callback: (element: OSM.Element<N, W, R>) => (Error | void)) {
         return new Promise<void>((resolve, reject) => {
             createReadStream(path)
             .pipe(new OSMTransform({withInfo: false, withTags: true}))
@@ -191,12 +195,12 @@ export class OSMData extends TypedEventEmitter<OSMDataEvents> {
     }
 
 
-    #firstPass(element: OSM.Element) {
+    #firstPass(element: OSM.Element<N, W, R>) {
         if(element.type !== "way") { return }
         this.loadWay(element)
     }
 
-    #secondPass(element: OSM.Element) {
+    #secondPass(element: OSM.Element<N, W, R>) {
         if(element.type === "node") {
             if(!this.nodeToWayMap.has(element.id)) { return }
             this.loadNode(element)

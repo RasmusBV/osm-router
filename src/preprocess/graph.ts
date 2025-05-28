@@ -6,22 +6,22 @@ import type { Junction } from "./junctions.js";
 import { serialize, SerializeOptions } from "../fileformat/serialize.js";
 import { Info } from "../logging.js";
 
-export type ProcessTurn = (
-    turn: Readonly<Turn>,
-    junction: Readonly<Junction>, 
-    data: OSMData
+export type ProcessTurn<N, W> = (
+    turn: Readonly<Turn<N, W>>,
+    junction: Readonly<Junction<N, W>>, 
+    data: OSMData<N, W, any>
 ) => number | undefined
 
-export type Turn = {
-    fromNode: OSM.Node, 
-    fromEdge: OSM.Edge
-    fromClosest: OSM.Node,
+export type Turn<N, W> = {
+    fromNode: OSM.ProcessedNode<N>, 
+    fromEdge: OSM.Edge<W>
+    fromClosest: OSM.ProcessedNode<N>,
 
-    viaNode: OSM.Node, 
+    viaNode: OSM.ProcessedNode<N>, 
 
-    toNode: OSM.Node, 
-    toEdge: OSM.Edge,
-    toClosest: OSM.Node,
+    toNode: OSM.ProcessedNode<N>, 
+    toEdge: OSM.Edge<W>,
+    toClosest: OSM.ProcessedNode<N>,
 
     angle: number
     restrictions: Restriction[] | undefined
@@ -47,30 +47,30 @@ export type EdgeExpandedGraph = Map<OSM.NodeId, Map<OSM.NodeId, {
 
 }>>
 
-export type NodeMap = Map<OSM.NodeId, {pos: [lon: number, lat: number], edges: Set<OSM.Edge>}>
+export type NodeMap<W> = Map<OSM.NodeId, {pos: [lon: number, lat: number], edges: Set<OSM.Edge<W>>}>
 
-export class Graph {
+export class Graph<W = any> {
     edges: EdgeExpandedGraph = new Map()
-    nodes: NodeMap = new Map()
+    nodes: NodeMap<W> = new Map()
 
     serialize(options?: SerializeOptions) {
         return serialize(this, options)
     }
 }
 
-export function buildGraph(
-    data: OSMData,
-    junctions: Map<OSM.Node, Junction>,
+export function buildGraph<N, W>(
+    data: OSMData<N, W>,
+    junctions: Map<OSM.Node, Junction<N, W>>,
     restrictions: RestrictionMap,
-    processTurn: ProcessTurn = () => 0
+    processTurn: ProcessTurn<N, W> = () => 0
 ) {
     let i = 0
     const amount = junctions.size
     let current = Date.now()
-    const graph = new Graph()
+    const graph = new Graph<W>()
     try {
         // Reuse the object to 
-        const turn = {} as Turn
+        const turn = {} as Turn<N, W>
         for(const [viaNode, toJunction] of junctions) {
             if(i%10_000 === 0 && Date.now() - 2000 > current) {
                 current = Date.now()
@@ -107,8 +107,7 @@ export function buildGraph(
                     const turnCost = processTurn(turn, toJunction, data)
                     if(turnCost === undefined) { continue }
 
-                    // Unsure about this cost calculation
-                    const totalCost = turnCost + fromEdge.cost/2 + toEdge.cost/2
+                    const totalCost = turnCost + fromEdge.cost
 
                     getExpandedEdge(fromNode, viaNode, fromEdge, graph, data)?.to.set(toNode.id, totalCost)
                     getExpandedEdge(viaNode, toNode, toEdge, graph, data)?.from.set(fromNode.id, totalCost)
@@ -124,7 +123,7 @@ export function buildGraph(
     return graph
 }
 
-function getClosestNode(way: OSM.ProcessedWay, anchor: OSM.NodeId, via: OSM.NodeId, data: OSMData) {
+function getClosestNode<N, W>(way: OSM.ProcessedWay<W>, anchor: OSM.NodeId, via: OSM.NodeId, data: OSMData<N>) {
     const anchorNodeIndex = way.refs.indexOf(anchor)
     const viaNodeIndex = way.refs.indexOf(via)
     if(anchorNodeIndex === -1 || viaNodeIndex === -1) { return undefined }
@@ -132,12 +131,12 @@ function getClosestNode(way: OSM.ProcessedWay, anchor: OSM.NodeId, via: OSM.Node
     return data.nodes.get(way.refs[closestNodeIndex])
 }
 
-function getExpandedEdge(
-    from: OSM.Node,
-    to: OSM.Node,
-    edgeInfo: OSM.Edge,
-    graph: Graph,
-    data: OSMData
+function getExpandedEdge<N, W>(
+    from: OSM.ProcessedNode<N>,
+    to: OSM.ProcessedNode<N>,
+    edgeInfo: OSM.Edge<W>,
+    graph: Graph<W>,
+    data: OSMData<N, W>
 ) {
     let edges = graph.edges.get(from.id)
     if(!edges) {

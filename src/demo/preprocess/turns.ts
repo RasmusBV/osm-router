@@ -5,22 +5,20 @@ import { Preprocess } from "../../index.js"
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
 export function processTurn(
-    turn: Readonly<Preprocess.Turn>,
-    junction: Readonly<Preprocess.Junction>,
+    turn: Readonly<Preprocess.Turn<any, any>>,
+    junction: Readonly<Preprocess.Junction<any, any>>,
     data: Preprocess.OSMData
 ) {
     let duration = 0
-    const turnPenalty = profile.turn_penalty
-    const turnBias = profile.turn_bias
     const obstacles = data.getObstacles(turn.fromEdge.way, turn.fromNode, turn.viaNode)
     for(const obstacle of obstacles) {
-        duration += obstacle.duration
+        duration += (obstacle.duration ?? 0)
     }
     // https://github.com/Project-OSRM/osrm-backend/blob/4ee9968e3b585ee8ef28aec4a7fe3cfdea1f9ea2/profiles/car.lua#L497
     if(junction.from.size > 1 || junction.to.size > 1) {
         if(Math.abs(turn.angle) > 110) { return undefined }
-        duration += turnPenalty / (
-            1 + Math.exp(-((13 / turnBias) * Math.abs(turn.angle)/180 - 6.5*turnBias))
+        duration += 7.5 / (
+            1 + Math.exp(-(12 * Math.abs(turn.angle)/180 - 7))
         )
     }
     if(Math.abs(turn.angle) > 135) {

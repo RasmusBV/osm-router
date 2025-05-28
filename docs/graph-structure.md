@@ -1,0 +1,2 @@
+# **Graph Structure**
+The graph structure is heavily inspired by OSRM, and they have a great article about edge-expanded graphs on their [wiki](https://github.com/Project-OSRM/osrm-backend/wiki/Graph-representation)

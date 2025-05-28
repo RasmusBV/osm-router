@@ -1,3 +1,4 @@
+import type { Obstacle } from "./preprocess/obstacles.js"
 import * as Types from "./types.js"
 
 /**
@@ -7,11 +8,25 @@ import * as Types from "./types.js"
  * @param record An object with keys corresponding to potential tag values
  * 
  */
-export const tagValueLookup = <T extends Record<string, any>>(element: Types.Element, key: string, record: T): (T[keyof T] | undefined) => {
+export const tagValueLookup = <T extends Record<string, any>>(element: Types.RawElement, key: string, record: T): (T[keyof T] | undefined) => {
     const tagValue = element.tags?.[key]
     if(!tagValue) { return undefined }
     const recordValue = record[tagValue]
     return recordValue
+}
+
+/**
+ * Add an obstacle to a node, creating the obstacles array if it does not exist.
+ * @param node The OSM node to which to add the obstacle
+ * @param obstacle The obstacle to add to the node
+ */
+export const addObstacle = <T>(node: Types.ProcessedNode<T>, obstacle: Obstacle) => {
+    let obstacles = node.obstacles
+    if(!obstacles) {
+        obstacles = []
+        node.obstacles = obstacles
+    }
+    obstacles.push(obstacle)
 }
 
 /**
@@ -72,7 +87,7 @@ export const getForwardBackwardArray = (way: Types.Way, keys: Iterable<string>):
  * 
  * This function will check all values in the order they are provided, and return the first non-undefined value.
  */
-export const prefixValue = (element: Types.Element, values: Iterable<string>, prefix: string) => {
+export const prefixValue = (element: Types.RawElement, values: Iterable<string>, prefix: string) => {
     for(const value of values) {
         const tagValue = element.tags?.[prefix + ":" + value]
         if(tagValue) { return tagValue }
@@ -88,7 +103,7 @@ export const prefixValue = (element: Types.Element, values: Iterable<string>, pr
  * 
  * This function will check all values in the order they are provided, and return the first non-undefined value.
  */
-export const postfixValue = (element: Types.Element, values: Iterable<string>, postfix: string) => {
+export const postfixValue = (element: Types.RawElement, values: Iterable<string>, postfix: string) => {
     for(const value of values) {
         const tagValue = element.tags?.[value + ":" + postfix]
         if(tagValue) { return tagValue }
