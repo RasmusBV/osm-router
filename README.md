@@ -7,18 +7,14 @@ This is instead meant to be a router for augmenting and modifying routes generat
 
 As such it does not feature any kind of graph augmentation like *Contraction Hierarchies* or *Multilevel Djikstras*, as they do not allow for arbitrary dynamic cost functions. The routing therefore is pretty slow, especially if you use a complicated dynamic cost function, which is what this was built for. On my machine 10 kilometers is around the limit for acceptable performance.
 
-# **Usage**
-
-## Routing Engine
-The engine currently features 2 routing algorithms, *Djikstras* and *Bidirectional djikstras*.
-
-Both of them can be augmented with an arbitrary cost function **per route**.
-
-Shown here with the two examples from the demo, one avoids the circle, and one is required to pass through it.
+# **Demo**
+An arbitrary cost function can mean a lot of things. Two simple examples are shown here, one that avoids a circle and one that requires to pass through it.
 
 ![Demo Showcase](./docs/assets/demo_showcase.gif)
 
 For instructions on how to play around with the demo on your machine, see `docs/demo.md`
+
+# **Usage**
 
 ## Preprocessing Pipeline
 Like those optimized routing engines, this one also relies on a preprocessing pipeline to create a routable graph from OpenStreetMap data.
@@ -41,21 +37,21 @@ await data.read("./example.osm.pbf")
 // Preprocessing OSM Nodes.
 data.process("node", (node, relations, data) => {
     if(node.tags?.barrier) {
-        return false
+        return
     }
-    return true
+    return node
 })
 
 // Preprocessing OSM Ways.
 data.process("way", (way, relations, data) => {
     const maxSpeedString = way.tags?.maxspeed
-    if(!maxSpeedString) { return true }
+    if(!maxSpeedString) { return way }
     const maxSpeed = parseFloat(maxSpeedString)
     if(!isNan(maxSpeed)) {
         way.speed.forward = maxSpeed
         way.speed.backward = maxSpeed
     }
-    return true
+    return way
 })
 
 // Building the routing graph.
@@ -74,6 +70,47 @@ await writeFile("./graph.bin", serialized.out)
 
 The resulting file is in a custom binary format. For more information on it see `docs/fileformat.md`.
 
+## Routing Engine
+After the preprocessing pipeline has been run, the resulting graph can be used to route between two points. The routing engine has both a one-way and a two-way Djikstra implementation, which can be used to route between two points in the graph.
+
+```ts
+import { Engine } from 'osm-router'
+
+const engine = await Engine.fromFile("./graph.bin")
+
+const avoid = [2.2944, 48.8583]
+
+function route(from: [number, number], to: [number, number]) {
+    const fromEdges = engine.getNearbyEdges(from)
+    const toEdges = engine.getNearbyEdges(to)
+
+    if(!fromEdges || !toEdges) {
+        throw new Error("Could not find nodes for the given coordinates")
+    }
+
+    const route = engine.djikstras(fromEdges, toEdges, {
+        // Example: Avoid a specific point
+        dynamicCostFunction: (current, next, staticCost) => {
+            let dynamicCost = 0
+            engine.data.listEdgeNodes(next, (nodeIndex) => {
+                if(Utils.distance(engine.data.nodePos(nodeIndex), avoid) < 100) {
+                    dynamicCost = 1000
+                    return false
+                }
+            })
+            return dynamicCost
+        }
+    })
+
+    if(!route) {
+        throw new Error("No route found")
+    }
+
+    return engine.generateGeometry(path)
+}
+
+
+```
 # **API**
 
 # OSMData(options?)
@@ -108,9 +145,20 @@ The type of element to process
 ### handler
 type: `Function`
 
-The function responsible for processing the type of element selected with the `type` parameter.
-To process the element, the function is expected to mutate it, while still conforming to the element type.
-If the handler returns a falsy value, the element will be discarded and not used to build the final graph.
+The function responsible for processing the type of element selected with the `type` parameter. To process the element, the function is expected to mutate it, while still conforming to the element type. The function is expected to return the element in cases where the element should be used. If the element should be discarded and not used to build the final graph, `undefined` should be returned.
+
+The function is allowed to attach custom data to each element which can then later be retrieved for any purpose. For type inference later the type information should be attached to the returned element and it will be attached to the `OSMData` instance.
+
+```ts
+const data = new OSMData()
+
+// Any custom data is typed correctly in chained calls, but will be lost afterwards
+data.process("node", processNode).process("way", processWay)
+
+// Any custom data is typed correctly when using newData
+const newData = data.process("node", processNode)
+newData.process("way", processWay)
+```
 
 See the **Processing elements** section for details.
 
@@ -162,10 +210,9 @@ There are three processing steps in the preprocessing pipeline.
 
 These are here for convenience, but the entire graph is accessible on the `OSMData` object if some custom pre processing is necessary for your usecase.
 
-## Nodes
-When processing nodes the intended way to handle them is to use **Obstacles**. These are a piece of data associated with a node. They are not factored in automatically, and you are responsible for factoring them in when building the graph via the `processTurn` function.
+## **Nodes**
+When processing nodes the intended way to handle them is to use **Obstacles**, this is a concept deeply inspired by OSRM's obstacles. These are a piece of data associated with a node. They are **not** factored in automatically, and you are responsible for factoring them in when building the graph via the `processTurn` function.
 
-### **Obstacles**
 Obstacles are defined by three fields:
 
 ### duration
@@ -197,8 +244,18 @@ The direction of the obstacle is factored in when using the `.getObstacles` meth
 
 Obstacles on a specific node are accessible via the `.obstacles` field.
 
-## Ways
-When processing ways, there are 4 fields that can be modified. All of them can be modified in both directions.
+## **Ways**
+When processing ways, there are 3 fields that can be modified. All of them can be modified in both directions. These three fields are what the graph building process uses to calculate the cost of traversing a way.
+
+The calculation is `(length / speed) * multiplier`, where `length` is the length of the way in meters, `speed` is the speed in meters per second, and `multiplier` is a multiplier that is applied to the time it takes to traverse the way.
 
 ### speed
-The speed 
+The speed of the way in meters per second. This is used to calculate the time it takes to traverse the way. If not set, the default speed is 0 m/s, which means that the way is not traversable.
+
+### multiplier
+A multiplier that is applied to the time it takes to traverse the way. This can be used to factor in things like road conditions, width of the road, etc. If not set, the default multiplier is 1.
+
+### innaccessible
+A boolean that indicates whether the way is accessible or not. This can be used a way to only make ways innaccessible in a specific direction. If not set, the default is `false`, which means that the way is accessible in both directions.
+
+## **Turns**

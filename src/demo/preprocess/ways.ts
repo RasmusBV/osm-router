@@ -4,21 +4,7 @@ import { profile } from "./profile.js"
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
-export const wayProcessors = [
-    blocked,
-    avoid,
-    access,
-    oneway,
-    alternateOptions,
-    service,
-    highOccupancyVehicle,
-    speed,
-    maxspeed,
-    surface,
-    penalties
-]
-
-function blocked<T>(way: OSM.ProcessedWay<T>) {
+export function blocked<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     // Areas
     if(way.tags?.area === "yes") { return }
 
@@ -57,25 +43,43 @@ function blocked<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function avoid<T>(way: OSM.ProcessedWay<T>) {
+export function avoid<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const highway = way.tags?.highway
     if(profile.avoid.has(highway)) { return }
     return way
 }
 
-function access<T>(way: OSM.ProcessedWay<T>) {
+export function restricted<T extends Record<string, any>>(_way: OSM.ProcessedWay<T>) {
+    const way = Utils.addCustomData(_way, {
+        restricted: {
+            forward: false,
+            backward: false
+        }
+    })
     const [forwardAccess, backwardAccess] = Utils.getForwardBackwardArray(way, profile.access_tags_hierarchy)
     const highway = way.tags?.highway
     if(profile.restricted_highway_whitelist.has(highway)) {
-        way.restricted = {
+        way.custom.restricted = {
             forward: Boolean(forwardAccess && profile.restricted_access_tag_list.has(forwardAccess)),
             backward: Boolean(backwardAccess && profile.restricted_access_tag_list.has(backwardAccess))
         }
     }
-    if(profile.access_tag_blacklist.has(forwardAccess) && !way.restricted.forward) {
+    if(profile.access_tag_blacklist.has(forwardAccess) && !way.custom.restricted.forward) {
         way.innaccessible.forward = true
     }
-    if(profile.access_tag_blacklist.has(backwardAccess) && !way.restricted.backward) {
+    if(profile.access_tag_blacklist.has(backwardAccess) && !way.custom.restricted.backward) {
+        way.innaccessible.backward = true
+    }
+    const hov = way.tags?.hov
+    if(hov === "designated") {
+        way.custom.restricted.forward = true
+        way.custom.restricted.backward = true
+    }
+    const [forward, backward] = Utils.getForwardBackward(way, "hov:lanes")
+    if(forward && forward.split("|").every((val) => val === "designated")) {
+        way.innaccessible.forward = true
+    }
+    if(backward && backward.split("|").every((val) => val === "designated")) {
         way.innaccessible.backward = true
     }
     if(way.innaccessible.forward && way.innaccessible.backward) {
@@ -84,7 +88,8 @@ function access<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function oneway<T>(way: OSM.ProcessedWay<T>) {
+
+export function oneway<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const oneway = Utils.prefixValue(way, profile.restrictions, "oneway") ?? way.tags?.oneway
     if(oneway === "-1") {
         way.innaccessible.forward = true
@@ -104,7 +109,7 @@ function oneway<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function service<T>(way: OSM.ProcessedWay<T>) {
+export function service<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const service = way.tags?.service
     if(service && way.tags?.foot === "yes") {
         return
@@ -115,30 +120,14 @@ function service<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function alternateOptions<T>(way: OSM.ProcessedWay<T>) {
+export function alternateOptions<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     if((way.tags?.route ?? "") in profile.route_speeds) {
         return
     }
     return way
 }
 
-function highOccupancyVehicle<T>(way: OSM.ProcessedWay<T>) {
-    const hov = way.tags?.hov
-    if(hov === "designated") {
-        way.restricted.forward = true
-        way.restricted.backward = true
-    }
-    const [forward, backward] = Utils.getForwardBackward(way, "hov:lanes")
-    if(forward && forward.split("|").every((val) => val === "designated")) {
-        way.innaccessible.forward = true
-    }
-    if(backward && backward.split("|").every((val) => val === "designated")) {
-        way.innaccessible.backward = true
-    }
-    return way
-}
-
-function speed<T>(way: OSM.ProcessedWay<T>) {
+export function speed<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const highway = way.tags?.highway
     if(!highway) { return }
     const speed = profile.speeds.highway[highway] * Utils.kmphToMs
@@ -170,7 +159,7 @@ function speed<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function maxspeed<T>(way: OSM.ProcessedWay<T>) {
+export function maxspeed<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const keys = ["maxspeed:advisory", "maxspeed", "source:maxspeed", "maxspeed:type"]
     const [forward, backward] = Utils.getForwardBackwardArray(way, keys).map(parseMaxSpeedToMetersPerSecond)
     if(forward) {
@@ -196,7 +185,7 @@ function parseMaxSpeedToMetersPerSecond(source: string | undefined) {
     return maxSpeed
 }
 
-function surface<T>(way: OSM.ProcessedWay<T>) {
+export function surface<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const surfaceSpeed = Utils.tagValueLookup(way, "surface", profile.surface_speeds)
     const tracktypeSpeed = Utils.tagValueLookup(way, "tracktype", profile.tracktype_speeds)
     const smoothnessSpeed = Utils.tagValueLookup(way, "smoothness", profile.smoothness_speeds)
@@ -204,7 +193,7 @@ function surface<T>(way: OSM.ProcessedWay<T>) {
     return way
 }
 
-function applyMaximumSpeed<T>(way: OSM.ProcessedWay<T>, speeds: (number | undefined | null)[]) {
+function applyMaximumSpeed<T extends Record<string, any>>(way: OSM.ProcessedWay<T>, speeds: (number | undefined | null)[]) {
     const definedSpeeds = speeds.filter((val) => typeof val === "number").map((val) => val * Utils.kmphToMs)
     way.speed.forward = Math.min(...definedSpeeds, way.speed.forward)
     way.speed.backward = Math.min(...definedSpeeds, way.speed.backward)
@@ -215,7 +204,7 @@ const minSpeed = Math.min(...Object.values(profile.speeds.highway))
 const maxSpeedPenalty = minSpeed / maxSpeed
 const speedPenaltyScaling = maxSpeedPenalty / profile.speed_penalty_min
 
-function penalties<T>(way: OSM.ProcessedWay<T>) {
+export function penalties<T extends Record<string, any>>(way: OSM.ProcessedWay<T>) {
     const servicePenalty = Utils.tagValueLookup(way, "service", profile.service_penalties) ?? 1
     const speed = Utils.tagValueLookup(way, "highway", profile.speeds.highway) ?? profile.default_speed
     const width = Utils.convertToMeters(way.tags?.width) ?? Infinity

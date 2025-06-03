@@ -34,6 +34,7 @@ import * as fs from "fs"
                 }
                 let found = false
                 let distance = 0
+                
                 engine.data.listEdgeNodes(edgeIndex, (nodeIndex) => {
                     distance = geokdbush.distance(
                         engine.data.accessors.nodes.lon(nodeIndex),
@@ -56,7 +57,7 @@ import * as fs from "fs"
             }
         })
         if(!path) { return null }
-        return engine.generateGeometry(path, Direction.Forward)
+        return engine.generateGeometry(path)
     }
 
     http.createServer(async(req, res) => {

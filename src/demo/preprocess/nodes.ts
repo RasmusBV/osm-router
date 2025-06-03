@@ -4,7 +4,7 @@ import { profile } from "./profile.js"
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
-export function processNode<T>(node: OSM.ProcessedNode<T>, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) {
+export function processNode<T extends Record<string, any>>(node: OSM.ProcessedNode<T>, relations: OSM.Relation[] | undefined, data: Preprocess.OSMData) {
     const access = profile.access_tags_hierarchy.find((tag) => node.tags?.[tag])
     const barrier = node.tags?.barrier
     const highway = node.tags?.highway

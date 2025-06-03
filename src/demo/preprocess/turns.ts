@@ -1,12 +1,12 @@
-import { profile } from "./profile.js"
+import { profile, RestrictedCustomData } from "./profile.js"
 import { Preprocess } from "../../index.js"
 
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
 export function processTurn(
-    turn: Readonly<Preprocess.Turn<any, any>>,
-    junction: Readonly<Preprocess.Junction<any, any>>,
+    turn: Readonly<Preprocess.Turn<RestrictedCustomData>>,
+    junction: Readonly<Preprocess.Junction<RestrictedCustomData>>,
     data: Preprocess.OSMData
 ) {
     let duration = 0
@@ -24,7 +24,10 @@ export function processTurn(
     if(Math.abs(turn.angle) > 135) {
         duration += profile.u_turn_penalty
     }
-    if(!turn.fromEdge.way.restricted && turn.toEdge.way.restricted) {
+    if(
+        !turn.fromEdge.way.custom.restricted[turn.fromDirection] && 
+        turn.toEdge.way.custom.restricted[turn.toDirection]
+    ) {
         duration = 10_000 // Arbitrary large number
     }
     return duration

@@ -3,14 +3,14 @@ import type { OSMData } from "./data.js"
 import * as geokdbush from 'geokdbush';
 import { Info } from "../logging.js";
 
-export type Junction<N, W> = { to: Map<OSM.ProcessedNode<N>, OSM.Edge<W>>, from: Map<OSM.ProcessedNode<N>, OSM.Edge<W>> }
-export type JunctionMap<N, W> = Map<OSM.Node, Junction<N, W>>
+export type Junction<D extends OSM.CustomData> = { to: Map<OSM.ProcessedNode<D["node"]>, OSM.Edge<D["way"]>>, from: Map<OSM.ProcessedNode<D["node"]>, OSM.Edge<D["way"]>> }
+export type JunctionMap<D extends OSM.CustomData> = Map<OSM.ProcessedNode<D["node"]>, Junction<D>>
 
-export function buildJunctionMap<N, W>(data: OSMData<N, W>) {
-    const junctions: JunctionMap<N, W> = new Map()
+export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
+    const junctions: JunctionMap<D> = new Map()
 
     let size = 0
-    const segment: OSM.Node[] = []
+    const segment: OSM.ProcessedNode<D["node"]>[] = []
     for(const way of data.ways.values()) {
         if(way.refs.length <= 1) {
             data.emit("warning", new Info.ErrorLike("Malformed Way", { way }))
@@ -51,7 +51,7 @@ export function buildJunctionMap<N, W>(data: OSMData<N, W>) {
             let currentJunction = getJunctions(junctions, current)
 
             if(!way.innaccessible.forward) {
-                const edge: OSM.Edge<W> = {
+                const edge: OSM.Edge<D["way"]> = {
                     way, 
                     cost: cost.forward, 
                     nodes: Array.from({length: size}, (_, i) => segment[i].id)
@@ -60,7 +60,7 @@ export function buildJunctionMap<N, W>(data: OSMData<N, W>) {
                 currentJunction.from.set(first, edge)
             }
             if(!way.innaccessible.backward) {
-                const edge: OSM.Edge<W> = {
+                const edge: OSM.Edge<D["way"]> = {
                     way, 
                     cost: cost.backward, 
                     nodes: Array.from({length: size}, (_, i) => segment[size - 1 - i].id)
@@ -84,7 +84,7 @@ export function buildJunctionMap<N, W>(data: OSMData<N, W>) {
         if(!fromJunction || !toJunction) { continue }
         fromJunction.to.delete(node)
         toJunction.from.delete(node)
-        const newEdge: OSM.Edge<W> = {
+        const newEdge: OSM.Edge<D["way"]> = {
             way: fromEdge.way,
             cost: fromEdge.cost + toEdge.cost,
             nodes: fromEdge.nodes.concat(toEdge.nodes)
@@ -96,7 +96,7 @@ export function buildJunctionMap<N, W>(data: OSMData<N, W>) {
     return junctions
 }
 
-function getJunctions<N, W>(map: Map<OSM.Node, Junction<N, W>>, nodeId: OSM.Node) {
+function getJunctions<D extends OSM.CustomData>(map: Map<OSM.Node, Junction<D>>, nodeId: OSM.Node) {
     let junction = map.get(nodeId)
     if(!junction) {
         junction = {to: new Map(), from: new Map()}

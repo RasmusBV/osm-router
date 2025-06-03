@@ -1,4 +1,4 @@
-import type * as OSM from "../types.js"
+import * as OSM from "../types.js"
 import type { OSMData } from "./data.js";
 import getAngle from "@turf/angle"
 import { Restriction, isAllowed, RestrictionMap } from "./restrictions.js";
@@ -6,22 +6,24 @@ import type { Junction } from "./junctions.js";
 import { serialize, SerializeOptions } from "../fileformat/serialize.js";
 import { Info } from "../logging.js";
 
-export type ProcessTurn<N, W> = (
-    turn: Readonly<Turn<N, W>>,
-    junction: Readonly<Junction<N, W>>, 
-    data: OSMData<N, W, any>
+export type ProcessTurn<D extends OSM.CustomData> = (
+    turn: Readonly<Turn<D>>,
+    junction: Readonly<Junction<D>>, 
+    data: OSMData<D>
 ) => number | undefined
 
-export type Turn<N, W> = {
-    fromNode: OSM.ProcessedNode<N>, 
-    fromEdge: OSM.Edge<W>
-    fromClosest: OSM.ProcessedNode<N>,
+export type Turn<D extends OSM.CustomData> = {
+    fromNode: OSM.ProcessedNode<D["node"]>, 
+    fromEdge: OSM.Edge<D["way"]>
+    fromClosest: OSM.ProcessedNode<D["node"]>,
+    fromDirection: OSM.Direction
 
-    viaNode: OSM.ProcessedNode<N>, 
+    viaNode: OSM.ProcessedNode<D["node"]>, 
 
-    toNode: OSM.ProcessedNode<N>, 
-    toEdge: OSM.Edge<W>,
-    toClosest: OSM.ProcessedNode<N>,
+    toNode: OSM.ProcessedNode<D["node"]>, 
+    toEdge: OSM.Edge<D["way"]>,
+    toClosest: OSM.ProcessedNode<D["node"]>,
+    toDirection: OSM.Direction
 
     angle: number
     restrictions: Restriction[] | undefined
@@ -47,30 +49,30 @@ export type EdgeExpandedGraph = Map<OSM.NodeId, Map<OSM.NodeId, {
 
 }>>
 
-export type NodeMap<W> = Map<OSM.NodeId, {pos: [lon: number, lat: number], edges: Set<OSM.Edge<W>>}>
+export type NodeMap<D extends OSM.CustomData> = Map<OSM.NodeId, {pos: [lon: number, lat: number], edges: Set<OSM.Edge<D["way"]>>}>
 
-export class Graph<W = any> {
+export class Graph<D extends OSM.CustomData = OSM.CustomData> {
     edges: EdgeExpandedGraph = new Map()
-    nodes: NodeMap<W> = new Map()
+    nodes: NodeMap<D> = new Map()
 
     serialize(options?: SerializeOptions) {
         return serialize(this, options)
     }
 }
 
-export function buildGraph<N, W>(
-    data: OSMData<N, W>,
-    junctions: Map<OSM.Node, Junction<N, W>>,
+export function buildGraph<D extends OSM.CustomData>(
+    data: OSMData<D>,
+    junctions: Map<OSM.ProcessedNode<D["node"]>, Junction<D>>,
     restrictions: RestrictionMap,
-    processTurn: ProcessTurn<N, W> = () => 0
+    processTurn: ProcessTurn<D> = () => 0
 ) {
     let i = 0
     const amount = junctions.size
     let current = Date.now()
-    const graph = new Graph<W>()
+    const graph = new Graph<D>()
     try {
         // Reuse the object to 
-        const turn = {} as Turn<N, W>
+        const turn = {} as Turn<D>
         for(const [viaNode, toJunction] of junctions) {
             if(i%10_000 === 0 && Date.now() - 2000 > current) {
                 current = Date.now()
@@ -83,18 +85,27 @@ export function buildGraph<N, W>(
                     if(!isAllowed(fromEdge.way, viaNode, toEdge.way, restrictions)) {
                         continue
                     }
-
+                    const fromDirection = getWayDirection(fromEdge.way, fromNode.id, viaNode.id)
                     const fromClosest = getClosestNode(fromEdge.way, fromNode.id, viaNode.id, data)
+
+                    const toDirection = getWayDirection(toEdge.way, toNode.id, viaNode.id)
                     const toClosest = getClosestNode(toEdge.way, toNode.id, viaNode.id, data)
-                    if(!fromClosest || !toClosest) { continue }
+                    if(
+                        !fromDirection || 
+                        !fromClosest || 
+                        !toDirection || 
+                        !toClosest
+                    ) { continue }
 
                     turn.fromNode = fromNode
                     turn.fromEdge = fromEdge
                     turn.fromClosest = fromClosest
+                    turn.fromDirection = fromDirection
 
                     turn.toNode = toNode
                     turn.toEdge = toEdge
                     turn.toClosest = toClosest
+                    turn.toDirection = toDirection
 
                     turn.angle = getAngle(
                         [fromClosest.lon, fromClosest.lat], 
@@ -123,7 +134,14 @@ export function buildGraph<N, W>(
     return graph
 }
 
-function getClosestNode<N, W>(way: OSM.ProcessedWay<W>, anchor: OSM.NodeId, via: OSM.NodeId, data: OSMData<N>) {
+function getWayDirection(way: OSM.ProcessedWay<any>, anchor: OSM.NodeId, via: OSM.NodeId) {
+    const anchorNodeIndex = way.refs.indexOf(anchor)
+    const viaNodeIndex = way.refs.indexOf(via)
+    if(anchorNodeIndex === -1 || viaNodeIndex === -1) { return undefined }
+    return anchorNodeIndex < viaNodeIndex ? OSM.Direction.Forward : OSM.Direction.Backward
+}
+
+function getClosestNode<D extends OSM.CustomData>(way: OSM.ProcessedWay<D["way"]>, anchor: OSM.NodeId, via: OSM.NodeId, data: OSMData<D>) {
     const anchorNodeIndex = way.refs.indexOf(anchor)
     const viaNodeIndex = way.refs.indexOf(via)
     if(anchorNodeIndex === -1 || viaNodeIndex === -1) { return undefined }
@@ -131,12 +149,12 @@ function getClosestNode<N, W>(way: OSM.ProcessedWay<W>, anchor: OSM.NodeId, via:
     return data.nodes.get(way.refs[closestNodeIndex])
 }
 
-function getExpandedEdge<N, W>(
-    from: OSM.ProcessedNode<N>,
-    to: OSM.ProcessedNode<N>,
-    edgeInfo: OSM.Edge<W>,
-    graph: Graph<W>,
-    data: OSMData<N, W>
+function getExpandedEdge<D extends OSM.CustomData>(
+    from: OSM.ProcessedNode<D["node"]>,
+    to: OSM.ProcessedNode<D["node"]>,
+    edgeInfo: OSM.Edge<D["way"]>,
+    graph: Graph<D>,
+    data: OSMData<D>
 ) {
     let edges = graph.edges.get(from.id)
     if(!edges) {

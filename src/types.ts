@@ -1,7 +1,7 @@
 import type { Obstacle } from "./preprocess/obstacles.js"
 
-type CustomInfo<T> = {
-    custom?: T
+type CustomInfo<T extends Record<string, any>> = {
+    custom: T
 }
 
 export type Node = {
@@ -14,7 +14,7 @@ export type Node = {
 
 export type NodeId = number & {__brand: Node}
 
-export type ProcessedNode<T> = NodeInfo & Node & CustomInfo<T>
+export type ProcessedNode<T extends Record<string, any>> = NodeInfo & Node & CustomInfo<T>
 
 export type NodeInfo = {
     obstacles?: Obstacle[]
@@ -29,23 +29,27 @@ export type Way = {
 
 export type WayId = number & {__brand: Way}
 
-export type ProcessedWay<T> = WayInfo & Way & CustomInfo<T>
+export type ProcessedWay<T extends Record<string, any>> = WayInfo & Way & CustomInfo<T>
 
 export type WayInfo = {
     speed: Both<number>,
     multiplier: Both<number>,
-    innaccessible: Both<boolean>,
-    restricted: Both<boolean>,
+    innaccessible: Both<boolean>
 }
 
-export const defaultWayInfo = (): WayInfo => ({
+export const defaultWayInfo = (): WayInfo & CustomInfo<{}> => ({
     speed: {forward: 0, backward: 0},
     multiplier: {forward: 1, backward: 1},
     innaccessible: {forward: false, backward: false},
-    restricted: {forward: false, backward: false}
+    custom: {}
 })
 
-type Both<T> = {forward: T, backward: T}
+export enum Direction {
+    Forward = "forward",
+    Backward = "backward"
+}
+
+type Both<T> = {[Direction.Forward]: T, [Direction.Backward]: T}
 
 export type Relation = {
     type: "relation",
@@ -76,14 +80,29 @@ export type Member = WayMember | NodeMember | RelationMember
 
 export type RelationId = number & {__brand: Relation}
 
-export type ProcessedRelation<T> = Relation & CustomInfo<T>
+export type ProcessedRelation<T extends Record<string, any>> = Relation & CustomInfo<T>
 
 export type Id = NodeId | WayId | RelationId
 
 export type RawElement = Node | Way | Relation
-export type Element<N, W, R> = ProcessedNode<N> | ProcessedWay<W> | ProcessedRelation<R>
 
-export type Edge<T> = {
+export type CustomData = {
+    node: Record<string, any>
+    way: Record<string, any>
+    relation: Record<string, any>
+}
+
+export type NamedElement<T extends Record<string, any>> = {
+    node: ProcessedNode<T>
+    way: ProcessedWay<T>
+    relation: ProcessedRelation<T>
+}
+
+export type AllElements<D extends CustomData> = ProcessedNode<D["node"]> | ProcessedWay<D["way"]> | ProcessedRelation<D["relation"]>
+
+export type Element<T extends Record<string, any>> = ProcessedNode<T> | ProcessedWay<T> | ProcessedRelation<T>
+
+export type Edge<T extends Record<string, any>> = {
     way: ProcessedWay<T>, 
     cost: number, 
     nodes: NodeId[]

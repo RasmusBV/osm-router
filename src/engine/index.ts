@@ -47,7 +47,7 @@ export class Engine {
     getNearbyEdges(
         lon: number, 
         lat: number,
-        maxDistanceMeters: number
+        maxDistanceMeters = 50
     ) {
         const nodes = this.data.getNearbyNodes(lon, lat, Infinity, maxDistanceMeters)
         const edges: number[] = []
@@ -196,9 +196,9 @@ export class Engine {
 
     generateGeometry(
         route: RouteNode, 
-        direction: Direction, 
-        coordinates: [lon: number, lat: number][] = []
+        direction: Direction = Direction.Forward
     ) {
+        const coordinates: [lon: number, lat: number][] = []
         // Here be dragons
         // And they be off by 1
         RouteNode.iter(route, (candidate) => {

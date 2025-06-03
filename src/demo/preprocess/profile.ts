@@ -2,6 +2,17 @@
 // Inspired by the car profile from project OSRM
 // https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua
 
+export type RestrictedCustomData = {
+    way: {
+        restricted: {
+            forward: boolean,
+            backward: boolean
+        }
+    },
+    node: {},
+    relation: {}
+}
+
 export const profile = {
     u_turn_penalty: 20,
     traffic_signal_penalty: 2,

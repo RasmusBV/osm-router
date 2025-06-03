@@ -1,5 +1,5 @@
 import { processNode } from "./preprocess/nodes.js"
-import { wayProcessors } from "./preprocess/ways.js"
+import * as wayProcessors from "./preprocess/ways.js"
 import { processTurn } from "./preprocess/turns.js"
 import { OSMData } from "../index.js"
 import * as fs from "fs/promises"
@@ -27,12 +27,22 @@ import * as fs from "fs/promises"
         console.log(info.toString())
     })
     await data.read(inputFilePath)
-    data.process("node", processNode)
-    for(const processor of wayProcessors) {
-        data.process("way", processor)
-    }
-    const graph = data.build(processTurn)
 
+    // It may be ugly
+    // but it makes handling custom data a lot smoother.
+    const graph = data.process("node", processNode)
+        .process("way", wayProcessors.blocked)
+        .process("way", wayProcessors.avoid)
+        .process("way", wayProcessors.restricted)       // <--- This preprocessing step adds some custom info.
+        .process("way", wayProcessors.oneway)
+        .process("way", wayProcessors.alternateOptions)
+        .process("way", wayProcessors.service)
+        .process("way", wayProcessors.speed)
+        .process("way", wayProcessors.maxspeed)
+        .process("way", wayProcessors.surface)
+        .process("way", wayProcessors.penalties)
+        .build(processTurn)                             // <--- Which is consumed down here while still being typed.
+    
     const serialized = await graph.serialize()
     await fs.writeFile(outputFilePath, serialized.out)
     console.log("Done")

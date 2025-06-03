@@ -9,17 +9,27 @@ import { buildJunctionMap } from "./junctions.js";
 import { buildRestrictionMap } from "./restrictions.js";
 import TypedEventEmitter from "../typedEmitter.js"
 
-export type ElementHandler<T extends OSM.RawElement["type"], A, N, W, R> = (
-    element: Extract<OSM.Element<N, W, R>, {type: T}>, 
+export type ElementHandler<T extends OSM.RawElement["type"], A extends Record<string, string>, D extends OSM.CustomData> = (
+    element: Extract<OSM.AllElements<D>, {type: T}>, 
     relations: OSM.Relation[] | undefined,
-    data: OSMData<N, W, R>
-) => Extract<OSM.Element<A, A, A>, {type: T}> | undefined
+    data: OSMData<D>
+) => Extract<OSM.Element<A>, {type: T}> | undefined
 
-type ProcessStep<T extends OSM.RawElement["type"], A, N, W, R> = {
-    node: OSMData<A, W, R>
-    way: OSMData<N, A, R>
-    relation: OSMData<N, W, A>
-}[T]
+// Sure aint nice but it makes typescript infer the Custom Data nicer
+type ProcessCustomData<T extends OSM.RawElement["type"], A, D extends OSM.CustomData> =
+T extends "node" ? {
+    node: A,
+    way: D["way"],
+    relation: D["relation"]
+} : T extends "way" ? {
+    node: D["node"],
+    way: A,
+    relation: D["relation"]
+} : T extends "relation" ? {
+    node: D["node"],
+    way: D["way"],
+    relation: A
+} : never
 
 type OSMDataEvents = {
     warning: (warn: Info) => void,
@@ -30,11 +40,19 @@ export type OSMOptions = {
     filter: (element: OSM.RawElement) => boolean
 }
 
-export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDataEvents> {    
+type DefaultCustomData = {
+    node: {}
+    way: {}
+    relation: {}
+}
+
+export class OSMData<
+    D extends OSM.CustomData = DefaultCustomData
+> extends TypedEventEmitter<OSMDataEvents> {    
     
-    public nodes = new Map<OSM.NodeId, OSM.ProcessedNode<N>>()
-    public ways = new Map<OSM.WayId, OSM.ProcessedWay<W>>()
-    public relations = new Map<OSM.RelationId, OSM.ProcessedRelation<R>>()
+    public nodes = new Map<OSM.NodeId, OSM.ProcessedNode<D["node"]>>()
+    public ways = new Map<OSM.WayId, OSM.ProcessedWay<D["way"]>>()
+    public relations = new Map<OSM.RelationId, OSM.ProcessedRelation<D["relation"]>>()
 
     public nodeToWayMap = new Map<OSM.NodeId, OSM.WayId[]>()
     public elementToRelationMap = new Map<OSM.Id, OSM.Relation[]>()
@@ -45,7 +63,7 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
         super()
     }
 
-    process<T extends OSM.RawElement["type"], A>(type: T, handler: ElementHandler<NoInfer<T>, A, N, W, R>) {
+    process<T extends OSM.RawElement["type"], A extends Record<string, any>>(type: T, handler: ElementHandler<NoInfer<T>, A, D>) {
         const map = this[`${type}s`]
         let current = Date.now()
         let i = 0
@@ -56,17 +74,17 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
                 this.emit("info", new Info.Progress("processing", {[type]: [i, amount]}))
             }
             const result = handler(element as any, this.elementToRelationMap.get(element.id), this)
-            if(!result) {
+            if(result === undefined) {
                 map.delete(element.id as any)
             } else {
                 map.set(element.id as any, result as any)
             }
             i++
         }
-        return this as any as ProcessStep<T, A, N, W, R>
+        return this as any as OSMData<ProcessCustomData<T, A, D>>
     }
     
-    build(processTurn?: ProcessTurn<N, W>) {
+    build(processTurn?: ProcessTurn<D>) {
         const junctions = buildJunctionMap(this)
         
         this.emit("info", new Info.Message("Built junction map"))
@@ -127,11 +145,12 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
     }
 
     loadNode(element: OSM.Node) {
-        this.nodes.set(element.id, element)
+        const node = Object.assign(element, {custom: {}})
+        this.nodes.set(node.id, node)
     }
     loadWay(element: OSM.Way) {
         const way = Object.assign(element, OSM.defaultWayInfo())
-        for(const nodeId of element.refs) {
+        for(const nodeId of way.refs) {
             let ways = this.nodeToWayMap.get(nodeId)
             if(!ways) {
                 ways = []
@@ -145,19 +164,20 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
     }
     loadRelation(element: OSM.Relation) {
         if(element.tags?.type !== "restriction") { return }
-        this.relations.set(element.id, element)
-        if(!element.members || !Array.isArray(element.members)) { return }
-        for(const member of element.members) {
+        const relation = Object.assign(element, {custom: {}})
+        this.relations.set(relation.id, relation)
+        if(!relation.members || !Array.isArray(relation.members)) { return }
+        for(const member of relation.members) {
             let relations = this.elementToRelationMap.get(member.ref)
             if(!relations) {
                 relations = []
                 this.elementToRelationMap.set(member.ref, relations)
             }
-            relations.push(element)
+            relations.push(relation)
         }
     }
 
-    readElement(element: OSM.Element<N, W, R>) {
+    readElement(element: OSM.AllElements<D>) {
         switch(element.type) {
             case "node": {
                 this.loadNode(element)
@@ -172,7 +192,7 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
         }
     }
 
-    #readPass(path: string, callback: (element: OSM.Element<N, W, R>) => (Error | void)) {
+    #readPass(path: string, callback: (element: OSM.AllElements<D>) => (Error | void)) {
         return new Promise<void>((resolve, reject) => {
             createReadStream(path)
             .pipe(new OSMTransform({withInfo: false, withTags: true}))
@@ -195,12 +215,12 @@ export class OSMData<N = any, W = any, R = any> extends TypedEventEmitter<OSMDat
     }
 
 
-    #firstPass(element: OSM.Element<N, W, R>) {
+    #firstPass(element: OSM.AllElements<D>) {
         if(element.type !== "way") { return }
         this.loadWay(element)
     }
 
-    #secondPass(element: OSM.Element<N, W, R>) {
+    #secondPass(element: OSM.AllElements<D>) {
         if(element.type === "node") {
             if(!this.nodeToWayMap.has(element.id)) { return }
             this.loadNode(element)

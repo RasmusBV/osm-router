@@ -20,7 +20,7 @@ export const tagValueLookup = <T extends Record<string, any>>(element: Types.Raw
  * @param node The OSM node to which to add the obstacle
  * @param obstacle The obstacle to add to the node
  */
-export const addObstacle = <T>(node: Types.ProcessedNode<T>, obstacle: Obstacle) => {
+export const addObstacle = <T extends Record<string, any>>(node: Types.ProcessedNode<T>, obstacle: Obstacle) => {
     let obstacles = node.obstacles
     if(!obstacles) {
         obstacles = []
@@ -169,4 +169,26 @@ export const convertToMeters = (val: string | undefined) => {
         }
     }
     return amount
+}
+
+type AddCustomData<
+    T extends Types.Element<any>,
+    R extends Record<string, any>
+> = T extends Types.Element<infer S> ? Types.NamedElement<S & R>[T["type"]] : never
+
+/**
+ * Add custom data to an OSM element, merging it with the existing custom data.
+ * @param element The OSM element to which to add the custom data
+ * @param custom The custom data to add to the element
+ * @returns The element with the custom data added and typed accordingly.
+ */
+export function addCustomData<
+    T extends Types.Element<any>,
+    R extends Record<string, any>
+>(
+    element: T,
+    custom: R
+) {
+    Object.assign(element.custom, custom)
+    return element as any as AddCustomData<T, R>
 }
