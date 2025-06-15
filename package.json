@@ -28,16 +28,20 @@
         "public"
     ],
     "devDependencies": {
+        "@turf/convex": "^7.2.0",
         "@types/geokdbush": "^1.1.5",
         "@types/node": "20.17.30",
+        "@types/seedrandom": "^3.0.8",
         "@types/webcrypto": "^0.0.30",
+        "0x": "^5.8.0",
         "del-cli": "^6.0.0",
+        "seedrandom": "^3.0.5",
         "typed-emitter": "^2.1.0",
         "typescript": "5.8.3",
         "zod": "^3.24.4"
     },
     "dependencies": {
-        "@datastructures-js/priority-queue": "6.3.2",
+        "@js-sdsl/priority-queue": "^4.4.0",
         "@turf/angle": "^7.1.0",
         "geokdbush": "^2.0.1",
         "kdbush": "^4.0.2",

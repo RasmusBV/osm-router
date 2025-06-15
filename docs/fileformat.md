@@ -95,9 +95,9 @@ The *In edge list* and *Out edge list* both refer to the Connections List, just 
 Size    | Name                 | Notes
 -------------------------------------------------------
 2B      | Node list length     |
-2B      | Out edge list length |
-2B      | In edge list length  |
-2B      | Padding              | Zero-fill
+1B      | Out edge list length |
+1B      | In edge list length  |
+4B      | Length               | meters (32bit float) 
 4B / 8B | Node list index      | Per global flag "Index Size"
 4B / 8B | Out edge list index  |
 4B / 8B | In edge list index   |

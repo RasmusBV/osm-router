@@ -98,25 +98,22 @@ instead create a new section with a new section id, and bump the minor version.
 
 A metadata field defined like this
 
----
-
 **Metadata V1**
-
-An XML document.
-
----
+```
+A UTF-8 encoded string (without BOM), embedded as a length-prefixed blob.
+Each line consists of a key, a colon, and a value.
+No escaping or quoting is used; colons and newlines are not allowed within values.
+Keys are case-sensitive and must not contain spaces.
+```
 
 Is changed into 
 
----
-
 **Metadata V2**
-
+```
 A JSON object encoded as a utf-8 string without BOM.
 
 The root value must be an object {...}
-
----
+```
 
 This should be handled by creating a new metadata section with a seperate section ID.
 

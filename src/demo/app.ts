@@ -1,9 +1,10 @@
-import { Direction, Engine } from "../index.js";
+import { BiDjikstras } from "../index.js";
 import * as geokdbush from "geokdbush"
 import z from "zod"
 import * as http from "http"
 import * as fs from "fs"
-
+import convex from "@turf/convex"
+import { point, lineString, featureCollection } from "@turf/helpers"
 
 ;(async() => {
     const graphFile = process.argv[2]
@@ -15,20 +16,32 @@ import * as fs from "fs"
     if(isNaN(parsedPort) || parsedPort < 0x0000 || parsedPort > 0xFFFF) {
         throw new Error("Invalid port value: " + port)
     }
-    const engine = await Engine.fromPath(graphFile)
+    const engine = await BiDjikstras.fromPath(graphFile)
+
+    const postProcess = (edges: Set<number>) => {
+        const points: [lon: number, lat: number][] = []
+        let i = 0
+        for(const edge of edges.values()) {
+            if(i++ % 10 !== 0) { continue }
+            const nodeListIndex = engine.data.accessors.edges.nodeListIndex(edge)
+            const nodeIndex = engine.data.accessors.nodeList.nodeIndex(nodeListIndex)
+            points.push(engine.data.nodePos(nodeIndex))
+        }
+        return convex(featureCollection(points.map((coords) => point(coords))))
+    }
 
     const route = (query: Query) => {
-        const fromEdges = engine.getNearbyEdges(...query.from, MAX_SNAP_DISTANCE_METERS)
-        const toEdges = engine.getNearbyEdges(...query.to, MAX_SNAP_DISTANCE_METERS)
+        const fromEdges = engine.data.getNearbyEdges(...query.from, MAX_SNAP_EDGES, Infinity)
+        const toEdges = engine.data.getNearbyEdges(...query.to, MAX_SNAP_EDGES, Infinity)
         if(fromEdges.length === 0 || toEdges.length === 0) {
             return null
         }
         const radius = MIN_AVOID_SIZE + query.strength * (MAX_AVOID_SIZE - MIN_AVOID_SIZE)
         const onFound = query.avoid ? 100_000_000 : 0
-        let i = 0
-        const path = engine.djikstras(fromEdges, toEdges, {
+        const edges = new Set<number>()
+        const path = engine.run(fromEdges, toEdges, {
             dynamicCostFunction: (previous, edgeIndex) => {
-                i++
+                edges.add(edgeIndex)
                 if(previous?.dynamicCost === onFound) {
                     return onFound
                 }
@@ -50,14 +63,20 @@ import * as fs from "fs"
                 if(found) {
                     return onFound
                 } else if(!query.avoid) {
-                    return distance*100_000_000
+                    return distance*10_000
                 } else {
                     return 0
                 }
             }
         })
         if(!path) { return null }
-        return engine.generateGeometry(path)
+        const geometry = engine.generateGeometry(path.forward, path.backward)
+        return {
+            geometry,
+            totalLength: path.backward.totalLength + path.forward.totalLength,
+            iterations: path.iterations,
+            visited: postProcess(edges)
+        }
     }
 
     http.createServer(async(req, res) => {
@@ -77,19 +96,26 @@ import * as fs from "fs"
                     })
                     const body = JSON.parse(rawBody)
                     const query = searchQuerySchema.parse(body)
+                    const start = process.hrtime.bigint()
                     const result = route(query)
+                    const totalTime = Number(process.hrtime.bigint() - start)/10e6
                     if(!result) {
                         res.writeHead(404).end()
                         return
                     }
                     res.writeHead(200, { 'Content-Type': 'application/json' })
                     res.end(JSON.stringify({
-                        type: "Feature",
-                        properties: {},
                         geometry: {
-                            type: "LineString",
-                            coordinates: result
-                        }
+                            type: "FeatureCollection",
+                            features: [
+                                lineString(result.geometry),
+                                result.visited
+                            ],
+                        },
+                        totalTime,
+                        length: result.totalLength,
+                        iterations: result.iterations
+                        
                     }))
                     break
                 } default: {
@@ -103,7 +129,7 @@ import * as fs from "fs"
             res.writeHead(500).end()
         }
     }).listen(port, () => {
-        console.log(`Listening on port: ${port}`)
+        console.log(`Listening on localhost:${port}`)
     })
 })()
 
@@ -119,4 +145,4 @@ type Query = z.infer<typeof searchQuerySchema>
 
 const MIN_AVOID_SIZE = 0
 const MAX_AVOID_SIZE = 2000
-const MAX_SNAP_DISTANCE_METERS = 25
+const MAX_SNAP_EDGES = 25

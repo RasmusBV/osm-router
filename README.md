@@ -247,7 +247,7 @@ Obstacles on a specific node are accessible via the `.obstacles` field.
 ## **Ways**
 When processing ways, there are 3 fields that can be modified. All of them can be modified in both directions. These three fields are what the graph building process uses to calculate the cost of traversing a way.
 
-The calculation is `(length / speed) * multiplier`, where `length` is the length of the way in meters, `speed` is the speed in meters per second, and `multiplier` is a multiplier that is applied to the time it takes to traverse the way.
+The calculation is `(length / speed) * multiplier` if the way is acessible.
 
 ### speed
 The speed of the way in meters per second. This is used to calculate the time it takes to traverse the way. If not set, the default speed is 0 m/s, which means that the way is not traversable.

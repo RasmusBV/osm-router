@@ -42,7 +42,7 @@ export type EdgeExpandedGraph = Map<OSM.NodeId, Map<OSM.NodeId, {
 
     /**All nodes between fromNode and viaNode. */
     nodes: OSM.NodeId[],
-
+    length: number
     /**All valid connections with associated costs. */
     to: Map<OSM.NodeId, number> 
     from: Map<OSM.NodeId, number>
@@ -175,6 +175,7 @@ function getExpandedEdge<D extends OSM.CustomData>(
         }
         edge = {
             nodes: edgeInfo.nodes,
+            length: edgeInfo.length,
             to: new Map(),
             from: new Map()
         }

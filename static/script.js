@@ -31,6 +31,10 @@ const circle = L.circle([48.8513, 2.3561], {
 const strengtSlider = document.getElementById("bubble-size")
 const avoid = document.getElementById("avoid")
 const loading = document.getElementById("loading")
+const iterationsEl = document.getElementById("iterations")
+const totalTimeEl = document.getElementById("totalTime")
+const totalLengthEl = document.getElementById("totalLength")
+const throughputEl = document.getElementById("throughput")
 
 function getStrength() {
     return parseInt(strengtSlider.value)/10
@@ -52,13 +56,11 @@ avoid.addEventListener("change", () => {
 
 setBubbleSize()
 
-let lastFrom = markerToUrlParam(from)
-let lastTo = markerToUrlParam(to)
 let currentPath = undefined
 let fetching = false
 let fetchAgain = false
 
-async function getPath(direction) {
+async function getPath() {
     if(fetching) {
         fetchAgain = true
         return
@@ -69,23 +71,21 @@ async function getPath(direction) {
         const path = await fetch("/path", {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                from: direction ? markerToUrlParam(from) : lastFrom,
-                to: direction ? lastTo : markerToUrlParam(to),
+                from: markerToUrlParam(from),
+                to: markerToUrlParam(to),
                 via: markerToUrlParam(via),
                 strength: getStrength(),
                 avoid: avoid.checked
             }),
             method: "POST"
         }).then((res) => res.json())
-        if(direction) {
-            lastFrom = markerToUrlParam(from)
-        } else {
-            lastTo = markerToUrlParam(to)
-        }
-        if(currentPath) {
-            currentPath.remove()
-        }
-        currentPath = L.geoJSON(path).addTo(map)
+        iterationsEl.innerText = path.iterations.toFixed(2) ?? "N/A"
+        totalTimeEl.innerText = path.totalTime.toFixed(2) ?? "N/A"
+        totalLengthEl.innerText = path.length.toFixed(2) ?? "N/A"
+        const throughput = path.iterations / path.totalTime
+        throughputEl.innerText = throughput.toFixed(2) ?? "N/A"
+        currentPath?.remove()
+        currentPath = L.geoJSON(path.geometry).addTo(map)
     } catch(e) {
         console.warn(e)
     }
@@ -103,11 +103,11 @@ function markerToUrlParam(marker) {
     return [latLng.lng, latLng.lat]
 }
 
-from.on("move", () => getPath(true))
-to.on("move", () => getPath(false))
+from.on("move", () => getPath())
+to.on("move", () => getPath())
 via.on("move", () => {
     circle.setLatLng(via.getLatLng())
-    getPath(true)
+    getPath()
 })
 
-getPath(true)
+getPath()

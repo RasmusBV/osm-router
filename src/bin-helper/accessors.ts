@@ -49,5 +49,8 @@ export function generateAccessor<T extends readonly Accessor[]>(
         }
     }
     size = Math.ceil(size / alignment) * alignment
-    return obj as DataAccessors<T>
+    return {
+        size,
+        accessors: obj as DataAccessors<T>
+    }
 }

@@ -8,6 +8,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
+    "removeComments": true,
     "skipLibCheck": true,
     "declaration": true,
     "rootDir": "src",

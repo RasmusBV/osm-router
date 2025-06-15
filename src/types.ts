@@ -49,6 +49,8 @@ export enum Direction {
     Backward = "backward"
 }
 
+export const Directions = [Direction.Forward, Direction.Backward]
+
 type Both<T> = {[Direction.Forward]: T, [Direction.Backward]: T}
 
 export type Relation = {
@@ -104,6 +106,7 @@ export type Element<T extends Record<string, any>> = ProcessedNode<T> | Processe
 
 export type Edge<T extends Record<string, any>> = {
     way: ProcessedWay<T>, 
+    length: number
     cost: number, 
     nodes: NodeId[]
 }

@@ -201,8 +201,9 @@ function serializeEdges(graph: Graph, layout: Layout, options: SerializeOptions)
             let offset = edgeIndex * edgesSize
             
             edgesBuffer.setUint16(offset, edge.nodes.length, littleEndian)
-            edgesBuffer.setUint16(offset + 2, edge.to.size, littleEndian)
-            edgesBuffer.setUint16(offset + 4, edge.from.size, littleEndian)
+            edgesBuffer.setUint8(offset + 2, edge.to.size)
+            edgesBuffer.setUint8(offset + 3, edge.from.size)
+            edgesBuffer.setFloat32(offset + 4, edge.length, littleEndian)
             offset += 8
 
             offset += writeIndex(edgesBuffer, offset, nodeListIndex)

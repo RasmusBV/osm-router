@@ -8,7 +8,11 @@ export class DataAccessor<T extends Format.SectionNames> {
     } = {} as any
 
     accessors: {
-        [K in T]: ReturnType<(typeof accessors)[K]>
+        [K in T]: ReturnType<(typeof accessors)[K]>["accessors"]
+    } = {} as any
+
+    sizes: {
+        [K in T]: number
     } = {} as any
 
     constructor(
@@ -23,7 +27,8 @@ export class DataAccessor<T extends Format.SectionNames> {
             }
             const accessor = readSection(header, section)
             this.sections[section.name as T] = section as any
-            this.accessors[section.name as T] = accessor as any
+            this.accessors[section.name as T] = accessor.accessors as any
+            this.sizes[section.name as T] = accessor.size
         }
     }
 }
@@ -72,12 +77,13 @@ export function readEdges(header: Header<Format.FormatDefinition>, edges: Serial
         method: "getUint16"
     }, {
         name: "toEdgeListLength",
-        method: "getUint16"
+        method: "getUint8"
     }, {
         name: "fromEdgeListLength",
-        method: "getUint16"
+        method: "getUint8"
     }, {
-        padding: 2
+        name: "length",
+        method: "getFloat32"
     }, {
         name: "nodeListIndex",
         method: indexMethod
@@ -119,11 +125,17 @@ export function readNodeList(header: Header<Format.FormatDefinition>, nodeList: 
 }
 
 export function readIndex(header: Header<Format.FormatDefinition>, index: SerializedSection<Format.SectionDefinitions, "index">) {
-    return KDBush.from(index.buffer.buffer)
+    return {
+        size: index.buffer.buffer.byteLength,
+        accessors: KDBush.from(index.buffer.buffer)
+    }
 }
 
 export function readMetadata(header: Header<Format.FormatDefinition>, metadata: SerializedSection<Format.SectionDefinitions, "metadata">) {
     const text = new TextDecoder().decode(metadata.buffer)
     const object = JSON.parse(text)
-    return object as Format.Metadata | object
+    return {
+        size: metadata.buffer.byteLength,
+        accessors: object as Format.Metadata | object
+    }
 }

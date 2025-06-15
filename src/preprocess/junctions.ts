@@ -1,4 +1,4 @@
-import type * as OSM from "../types.js"
+import * as OSM from "../types.js"
 import type { OSMData } from "./data.js"
 import * as geokdbush from 'geokdbush';
 import { Info } from "../logging.js";
@@ -10,6 +10,7 @@ export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
     const junctions: JunctionMap<D> = new Map()
 
     let size = 0
+    let totalLength = 0
     const segment: OSM.ProcessedNode<D["node"]>[] = []
     for(const way of data.ways.values()) {
         if(way.refs.length <= 1) {
@@ -26,7 +27,7 @@ export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
         }
         segment[0] = firstNode
         size = 1
-        const cost = {forward: 0, backward: 0}
+        totalLength = 0
         for(let i = 1; i < way.refs.length; i++) {
             const current = data.nodes.get(way.refs[i])
             if(!current) { 
@@ -38,10 +39,8 @@ export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
             }
             const last = segment[size-1]
             const length = geokdbush.distance(last.lon, last.lat, current.lon, current.lat) * 1000
+            totalLength += length
             segment[size++] = current
-
-            cost.forward += (length / way.speed.forward) * way.multiplier.forward
-            cost.backward += (length / way.speed.backward) * way.multiplier.backward
             if(
                 (data.nodeToWayMap.get(current.id)?.length ?? 0) <= 1 && 
                 i !== way.refs.length-1
@@ -50,26 +49,27 @@ export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
             let lastJunction = getJunctions(junctions, first)
             let currentJunction = getJunctions(junctions, current)
 
-            if(!way.innaccessible.forward) {
+            if(!way.innaccessible[OSM.Direction.Forward]) {
                 const edge: OSM.Edge<D["way"]> = {
                     way, 
-                    cost: cost.forward, 
+                    length: totalLength,
+                    cost: (totalLength / way.speed[OSM.Direction.Forward]) * way.multiplier[OSM.Direction.Forward], 
                     nodes: Array.from({length: size}, (_, i) => segment[i].id)
                 }
                 lastJunction.to.set(current, edge)
                 currentJunction.from.set(first, edge)
             }
-            if(!way.innaccessible.backward) {
+            if(!way.innaccessible[OSM.Direction.Backward]) {
                 const edge: OSM.Edge<D["way"]> = {
                     way, 
-                    cost: cost.backward, 
+                    length: totalLength,
+                    cost: (totalLength / way.speed[OSM.Direction.Backward]) * way.multiplier[OSM.Direction.Backward], 
                     nodes: Array.from({length: size}, (_, i) => segment[size - 1 - i].id)
                 }
                 lastJunction.from.set(current, edge)
                 currentJunction.to.set(first, edge)
             }
-            cost.forward = 0
-            cost.backward = 0
+            totalLength = 0
             segment[0] = current
             size = 1
         }
@@ -86,6 +86,7 @@ export function buildJunctionMap<D extends OSM.CustomData>(data: OSMData<D>) {
         toJunction.from.delete(node)
         const newEdge: OSM.Edge<D["way"]> = {
             way: fromEdge.way,
+            length: fromEdge.length + toEdge.length,
             cost: fromEdge.cost + toEdge.cost,
             nodes: fromEdge.nodes.concat(toEdge.nodes)
         }

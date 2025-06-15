@@ -19,6 +19,7 @@ export type ConnectionObject = {edgeIndex: number, cost: number}
 
 export type EdgeObject = {
     index: number
+    length: number
     nodes: NodeObject[],
     fromEdges: ConnectionObject[]
     toEdges: ConnectionObject[]
@@ -29,36 +30,6 @@ export class GraphAccessor extends Accessors.DataAccessor<RequiredSectionNames> 
         super(requiredSectionNames, deserialized.header, deserialized.sections)
     }
 
-    toObject<T extends Record<string, (index: number) => number>>(index: number, accessor: T) {
-        return Object.fromEntries(
-            Object.entries(accessor)
-            .map(([key, accessor]) => ([key, accessor(index)]))
-        ) as {[K in keyof T]: number}
-    }
-
-    getNodeObject(nodeIndex: number): NodeObject {
-        return this.toObject(nodeIndex, this.accessors.nodes)
-    }
-
-    getEdgeObject(edgeIndex: number) {
-        const edge: EdgeObject = {
-            index: edgeIndex,
-            nodes: [],
-            fromEdges: [],
-            toEdges: []
-        }
-        this.listEdgeNodes(edgeIndex, (nodeIndex) => {
-            const node = this.toObject(nodeIndex, this.accessors.nodes)
-            edge.nodes.push(node)
-        })
-        this.listFromEdges(edgeIndex, (fromEdgeIndex) => {
-            edge.fromEdges.push(this.toObject(fromEdgeIndex, this.accessors.connectionsList))
-        })
-        this.listToEdges(edgeIndex, (toEdgeIndex) => {
-            edge.fromEdges.push(this.toObject(toEdgeIndex, this.accessors.connectionsList))
-        })
-        return edge
-    }
     getNearbyNodes(
         lon: number, 
         lat: number,
@@ -67,7 +38,21 @@ export class GraphAccessor extends Accessors.DataAccessor<RequiredSectionNames> 
     ) {
         return geokdbush.around(this.accessors.index as any, lon, lat, maxResults, maxDistanceMeters ? maxDistanceMeters/1000 : undefined) as number[]
     }
-
+    getNearbyEdges(
+        lon: number, 
+        lat: number,
+        maxResults = Infinity,
+        maxDistanceMeters = 50
+    ) {
+        const nodes = this.getNearbyNodes(lon, lat, maxResults, maxDistanceMeters)
+        const edges: number[] = []
+        for(const nodeId of nodes) {
+            this.listNodeEdges(nodeId, (edgeIndex) => {
+                edges.push(edgeIndex)
+            })
+        }
+        return edges
+    }
     listNodeEdges(nodeIndex: number, callback: (edgeIndex: number, listIndex: number, listLength: number) => any) {
         const edgeListIndex = this.accessors.nodes.edgeListIndex(nodeIndex)
         const edgeListLength = this.accessors.nodes.edgeListLength(nodeIndex)
